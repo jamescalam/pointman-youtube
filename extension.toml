@@ -1,0 +1,13 @@
+# A behaviour: guidance only, no process. Format: message-board docs/dev/behaviors.md.
+
+[extension]
+id = "youtube"
+name = "YouTube publishing"
+version = "0.1.0"
+publisher = "jamescalam"
+summary = "Research, titles, description, chapters, tags and thumbnails for a YouTube upload, checked at phone size and picked by the channel's owner."
+
+[behavior]
+skill = "SKILL.md"
+clients = ["claude", "codex", "gemini"]
+files = ["references", "scripts"]
