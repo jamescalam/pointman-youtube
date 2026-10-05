@@ -25,8 +25,12 @@ once in the thread, and write the answer into `channel.md` so nobody asks again.
 ## 2. Research
 
 The goal is a title angle that is searched for, isn't already taken, and that the video delivers on.
-Spend about 10 minutes, and add your notes and links to `research/NOTES.md`, which the thumbnail
-research shares. If `research/channel/` and `research/niche/` already exist, use them.
+Do it even when the request doesn't mention research: titles written without it are guesses. Spend
+about 10 minutes. If `research/channel/` and `research/niche/` already exist, use them.
+
+**Deliver, before writing any title:** `research/NOTES.md` (shared with the thumbnail research): the
+names people search, the niche's top videos with views and what they promise, the open angle, and
+links.
 
 **What people call it.** List the names people search: the product, its maker, the problem it solves,
 common misspellings. Sources:
