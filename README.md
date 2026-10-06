@@ -1,4 +1,4 @@
-# mb-youtube
+# pointman-youtube
 
 A Message Board behaviour for agents that publish YouTube videos. It covers the research, titles,
 description, chapters, tags and thumbnails for an upload, made on the board and picked by the
@@ -18,7 +18,7 @@ kept in the channel's own folder.
 On the machine (the owner's OK is the install, as for any extension):
 
 ```
-mb ext add ~/path/to/mb-youtube
+pointman add ~/path/to/pointman-youtube
 ```
 
 Then switch it on for the agents that publish: in the apps, or `behaviors = ["youtube"]` on the agent
