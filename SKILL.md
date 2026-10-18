@@ -1,6 +1,6 @@
 ---
 name: youtube
-description: How to research, write and design a YouTube upload's packaging (title, thumbnail, description, chapters, tags) on the Message Board, for any channel. Use it when a task is any of those.
+description: How to research, write and design a YouTube upload's packaging (title, thumbnail, description, chapters, tags) on Pointman, for any channel. Use it when a task is any of those.
 ---
 
 # YouTube publishing

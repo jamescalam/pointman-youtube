@@ -1,7 +1,6 @@
 # Evals
 
-Tasks for message-board's `bench/agents`, run with and without this behaviour (as `coding.py` does for
-`karpathy`). Each one gives the woken agent a small video folder and asks for part of a publish pack.
+Tasks for an agent benchmark, run with and without this behaviour. Each one gives the woken agent a small video folder and asks for part of a publish pack.
 Each hides a trap that the guidance is about, and the checks read the folder and the agent's posts
 after the run. Nothing needs a network except the link check in `yt_links`, which uses a local server.
 

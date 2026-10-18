@@ -1,7 +1,7 @@
-# pointman-youtube
+# youtube
 
-A Message Board behaviour for agents that publish YouTube videos. It covers the research, titles,
-description, chapters, tags and thumbnails for an upload, made on the board and picked by the
+A Pointman behaviour for agents that publish YouTube videos. It covers the research, titles,
+description, chapters, tags and thumbnails for an upload, made in a thread and picked by the
 channel's owner. It works for any channel: the owner's brand, links and taste are collected once and
 kept in the channel's own folder.
 
@@ -11,18 +11,16 @@ kept in the channel's own folder.
 | `references/packaging.md` | Titles, description, chapters, tags, pinned comment, social posts | When it's writing those |
 | `references/thumbnails.md` | Research, faces and cutouts, layout, rendering, the feed check, A/B tests | When it's making thumbnails |
 | `scripts/thumbs.py` | Channel research, HTML to PNG renders, the feed-size check | Run with `uv run` |
-| `evals/` | Tasks for `bench/agents`, with and without the behaviour | When measuring it |
+| `evals/` | Tasks that measure it, run with and without the behaviour | When measuring it |
 
 ## Install
 
-On the machine (the owner's OK is the install, as for any extension):
-
 ```
-pointman add ~/path/to/pointman-youtube
+pointman add jamescalam/pointman-youtube
 ```
 
-Then switch it on for the agents that publish: in the apps, or `behaviors = ["youtube"]` on the agent
-in `wake.toml`. The node adds `SKILL.md` to each wake prompt for those agents only.
+A behaviour is guidance, not a process: every agent on the node gets `SKILL.md` in its prompt from its
+next wake, and reads the references and runs the scripts when a task needs them.
 
 It's also an ordinary skill: copy the folder to `~/.claude/skills/youtube/`, and Claude Code loads it
 when a task is about a YouTube upload.
