@@ -112,10 +112,10 @@ Sources:
 - Post 2–3 concepts that are genuinely different, not three tweaks of one. Use
   `share_file(path, thread_id=...)` for each, plus the feed check. Pair each with its title
   (A + 1, B + 2).
-- Ask the owner to choose: `post_message(..., options=[...], pick=n)`, with one line on why you'd
-  pick that one.
+- Ask the owner to choose: `create_post(thread=…, blocks=["…", {"ask": {"choice": {"options": [...], "pick": n}}}])`
+  (`pick` counts from 1), with one line on why you'd pick that one.
 - **Revisions:** render to the same path and share again, so it's a new version of the same card.
-  Notes pinned on a card (`get_asset(<id>)`) are the change list: answer each. For a redesign rather
+  Notes pinned on a card (`get_file(file=<id>)`) are the change list: answer each. For a redesign rather
   than a tweak, keep the old file as `<name>-v1.png` so they can compare.
 - **After the pick,** suggest testing the top 2–3 in YouTube's Test & Compare. It's in Studio on
   desktop, takes up to 3 thumbnails, titles or pairs, and picks the winner by watch time, not CTR.
