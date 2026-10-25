@@ -97,6 +97,7 @@ fn the_schemas_are_the_protos() {
         let fields = proto.get(&message).unwrap_or_else(|| panic!("{kind}: no message {message} in the proto"));
         let params = &c["params"];
         assert_eq!(params["type"].as_str(), Some("object"));
+        assert_eq!(params["additionalProperties"].as_bool(), Some(false), "{kind}: a mistyped param is refused");
         assert_eq!(&properties(params), fields, "{kind}'s params are {message}'s fields, with their comments");
         let result = format!("{}Result", pascal(kind.trim_start_matches("youtube.")));
         assert!(proto.contains_key(&result), "{kind}: no message {result}");
@@ -105,6 +106,7 @@ fn the_schemas_are_the_protos() {
         }
     }
     assert_eq!(&properties(&m["settings"]), &proto["Settings"], "the settings are Settings' fields");
+    assert_eq!(m["settings"]["additionalProperties"].as_bool(), Some(false));
     let privacy = ["private", "unlisted", "public"];
     for c in m["commands"].as_array().unwrap() {
         if let Some(p) = c["params"].get("properties").and_then(|p| p.get("privacy")) {
