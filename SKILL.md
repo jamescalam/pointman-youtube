@@ -21,7 +21,7 @@ and add to it whenever the owner tells you something, so nobody asks twice.
 3. **Real choices.** Make 2–3 genuinely different options, each title paired with a thumbnail. Post
    them as a decision (options and your pick, each with its evidence). The owner chooses.
 4. **Revise at the same path,** so each round is a new version of the same card. Notes pinned on a
-   card (`get_asset`) are the change list.
+   card (`get_file`) are the change list.
 5. **Report from evidence:** counts, checks, sources, and what you didn't check.
 
 **Thumbnails:** read `references/thumbnails.md` first; the tools are in `scripts/thumbs.py`. In
