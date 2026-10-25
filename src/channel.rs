@@ -8,7 +8,8 @@ use anyhow::bail;
 use serde_json::{json, Map, Value};
 
 use crate::google::Api;
-use crate::params::{check_publish_at, Category, Privacy, UpdateParams};
+use crate::params::timestamp;
+use crate::v1::{Category, Privacy, UpdateParams, Video};
 
 pub fn url(video: &str) -> String {
     format!("https://youtu.be/{video}")
@@ -28,25 +29,29 @@ pub fn privacy(video: &Value) -> Option<Privacy> {
     video["status"]["privacyStatus"].as_str().and_then(Privacy::from_youtube)
 }
 
-/// One row of youtube.videos (`Video`).
-pub fn row(v: &Value) -> Value {
+/// A video's views, as its `statistics` says them.
+pub fn views(v: &Value) -> i64 {
+    v["statistics"]["viewCount"].as_str().and_then(|n| n.parse().ok()).unwrap_or(0)
+}
+
+/// One row of youtube.videos.
+pub fn row(v: &Value) -> Video {
     let id = v["id"].as_str().unwrap_or_default();
-    let mut row = json!({
-        "id": id,
-        "title": v["snippet"]["title"],
-        "privacy": v["status"]["privacyStatus"],
-        "published_at": v["snippet"]["publishedAt"],
-        "views": v["statistics"]["viewCount"].as_str().and_then(|n| n.parse::<u64>().ok()).unwrap_or(0),
-        "url": url(id),
-    });
-    if let Some(at) = v["status"]["publishAt"].as_str() {
-        row["publish_at"] = json!(at);
+    let at = |t: &Value| t.as_str().and_then(timestamp).into();
+    Video {
+        id: id.to_string(),
+        title: v["snippet"]["title"].as_str().unwrap_or_default().to_string(),
+        privacy: privacy(v).unwrap_or_default().into(),
+        published_at: at(&v["snippet"]["publishedAt"]),
+        publish_at: at(&v["status"]["publishAt"]),
+        views: views(v),
+        url: url(id),
+        ..Default::default()
     }
-    row
 }
 
 /// The channel's videos, newest first: a page of rows, the next page's token, and how many there are in all.
-pub fn videos(api: &Api, page_size: u32, page: &str) -> anyhow::Result<(Vec<Value>, String, u64)> {
+pub fn videos(api: &Api, page_size: i32, page: &str) -> anyhow::Result<(Vec<Video>, String, i64)> {
     let channels = api.get("channels", &[("part", "contentDetails,statistics"), ("mine", "true")])?;
     let Some(channel) = channels["items"].as_array().and_then(|i| i.first()) else {
         bail!("the signed-in Google account has no YouTube channel");
@@ -62,7 +67,7 @@ pub fn videos(api: &Api, page_size: u32, page: &str) -> anyhow::Result<(Vec<Valu
     }
     let items = api.get("playlistItems", &query)?;
     let total = items["pageInfo"]["totalResults"]
-        .as_u64()
+        .as_i64()
         .or_else(|| channel["statistics"]["videoCount"].as_str().and_then(|n| n.parse().ok()))
         .unwrap_or(0);
     let next = items["nextPageToken"].as_str().unwrap_or_default().to_string();
@@ -111,8 +116,8 @@ pub struct Change {
 impl Change {
     /// Whether the owner must have said yes: the video is public, goes public, or is scheduled to.
     pub fn needs_confirm(&self) -> bool {
-        self.was == Some(Privacy::Public)
-            || self.becomes == Some(Privacy::Public)
+        self.was == Some(Privacy::PRIVACY_PUBLIC)
+            || self.becomes == Some(Privacy::PRIVACY_PUBLIC)
             || self.changed.contains(&"publish_at")
     }
 }
@@ -144,14 +149,13 @@ pub fn merge(video: &Value, p: &UpdateParams) -> anyhow::Result<Change> {
     if !p.tags.is_empty() {
         set(&mut snippet, "tags", json!(p.tags), "tags", &mut changed);
     }
-    if let Some(c) = p.category {
+    if let Some(c) = p.new_category() {
         set(&mut snippet, "categoryId", json!(c.id()), "category", &mut changed);
     }
-    if let Some(at) = &p.publish_at {
-        let at = check_publish_at(at)?;
-        let ends_private = match p.privacy {
-            Some(pr) => pr == Privacy::Private,
-            None => was == Some(Privacy::Private),
+    if let Some(at) = p.publish_at_checked()? {
+        let ends_private = match p.new_privacy() {
+            Some(pr) => pr == Privacy::PRIVACY_PRIVATE,
+            None => was == Some(Privacy::PRIVACY_PRIVATE),
         };
         if !ends_private {
             bail!(
@@ -161,10 +165,10 @@ pub fn merge(video: &Value, p: &UpdateParams) -> anyhow::Result<Change> {
         }
         set(&mut status, "publishAt", json!(at), "publish_at", &mut changed);
     }
-    if let Some(pr) = p.privacy {
+    if let Some(pr) = p.new_privacy() {
         set(&mut status, "privacyStatus", json!(pr.word()), "privacy", &mut changed);
         // a schedule is only a private video's: one made unlisted or public now loses it
-        if pr != Privacy::Private && status.remove("publishAt").is_some() && !changed.contains(&"publish_at") {
+        if pr != Privacy::PRIVACY_PRIVATE && status.remove("publishAt").is_some() && !changed.contains(&"publish_at") {
             changed.push("publish_at");
         }
     }
@@ -211,7 +215,7 @@ pub fn category_word(id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::read;
+    use pointman_extension::typed::from_value;
 
     fn video(privacy: &str) -> Value {
         json!({
@@ -225,7 +229,7 @@ mod tests {
     }
 
     fn params(v: Value) -> UpdateParams {
-        read(&v).unwrap()
+        from_value(v).unwrap()
     }
 
     #[test]

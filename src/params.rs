@@ -1,161 +1,68 @@
-//! The commands' params, as proto/youtube/v1/youtube.proto has them (`<Verb>Params`), read from the job's JSON, and the
-//! limits its buf.validate rules give, checked here too: a job made through create_job may not have been checked
-//! against the manifest's schema.
+//! The commands' params are proto/youtube/v1/youtube.proto's messages (`v1::UploadParams`…), which the SDK's typed
+//! handlers read: an unknown field, a missing required one or a word an enum doesn't have fails the command before it
+//! runs. What a JSON Schema can't say (a description's 5,000 bytes, tags as YouTube counts them, a time in the
+//! future), and the limits again for a job that didn't go through the manifest's schema, are checked here.
 
 use anyhow::{bail, Context};
+use buffa::{EnumValue, Enumeration};
+use buffa_types::google::protobuf::Timestamp;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-/// Who can see a video (`Privacy`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Privacy {
-    Private,
-    Unlisted,
-    Public,
-}
+use crate::v1::{Category, Privacy, UpdateParams, UploadParams};
 
 impl Privacy {
+    /// Its word, as the manifest and YouTube's `status.privacyStatus` say it.
     pub fn word(self) -> &'static str {
         match self {
-            Privacy::Private => "private",
-            Privacy::Unlisted => "unlisted",
-            Privacy::Public => "public",
+            Privacy::PRIVACY_UNLISTED => "unlisted",
+            Privacy::PRIVACY_PUBLIC => "public",
+            Privacy::PRIVACY_PRIVATE | Privacy::PRIVACY_UNSPECIFIED => "private",
         }
     }
 
-    /// YouTube's `status.privacyStatus`.
     pub fn from_youtube(s: &str) -> Option<Self> {
         match s {
-            "private" => Some(Privacy::Private),
-            "unlisted" => Some(Privacy::Unlisted),
-            "public" => Some(Privacy::Public),
+            "private" => Some(Privacy::PRIVACY_PRIVATE),
+            "unlisted" => Some(Privacy::PRIVACY_UNLISTED),
+            "public" => Some(Privacy::PRIVACY_PUBLIC),
             _ => None,
         }
     }
 }
 
-/// A video's category (`Category`): each one's number is YouTube's category id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Category {
-    FilmAnimation = 1,
-    AutosVehicles = 2,
-    Music = 10,
-    PetsAnimals = 15,
-    Sports = 17,
-    TravelEvents = 19,
-    Gaming = 20,
-    PeopleBlogs = 22,
-    Comedy = 23,
-    Entertainment = 24,
-    NewsPolitics = 25,
-    HowtoStyle = 26,
-    Education = 27,
-    ScienceTechnology = 28,
-    NonprofitsActivism = 29,
+/// A known value of an enum field: None for one left out, unspecified, or a number this build doesn't know.
+pub fn known<E: Enumeration + Copy>(v: &EnumValue<E>) -> Option<E> {
+    v.as_known().filter(|e| e.to_i32() != 0)
 }
-
-const CATEGORIES: [Category; 15] = [
-    Category::FilmAnimation,
-    Category::AutosVehicles,
-    Category::Music,
-    Category::PetsAnimals,
-    Category::Sports,
-    Category::TravelEvents,
-    Category::Gaming,
-    Category::PeopleBlogs,
-    Category::Comedy,
-    Category::Entertainment,
-    Category::NewsPolitics,
-    Category::HowtoStyle,
-    Category::Education,
-    Category::ScienceTechnology,
-    Category::NonprofitsActivism,
-];
 
 impl Category {
-    /// YouTube's `snippet.categoryId`.
+    /// YouTube's `snippet.categoryId`: each value's number.
     pub fn id(self) -> String {
-        (self as u32).to_string()
+        self.to_i32().to_string()
     }
 
+    /// Its word, as the manifest says it: `science_technology`.
     pub fn word(self) -> String {
-        serde_json::to_value(self).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
+        self.proto_name().trim_start_matches("CATEGORY_").to_lowercase()
     }
 
+    /// One a video can be given, from YouTube's id.
     pub fn from_id(id: &str) -> Option<Self> {
-        CATEGORIES.into_iter().find(|c| c.id() == id)
+        id.parse().ok().and_then(Category::from_i32).filter(|c| c.to_i32() != 0)
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct VideosParams {
-    #[serde(default)]
-    pub page_size: Option<u32>,
-    #[serde(default)]
-    pub page: String,
+/// A Timestamp as RFC 3339, in UTC.
+pub fn rfc3339(t: &Timestamp) -> String {
+    OffsetDateTime::from_unix_timestamp(t.seconds).ok().and_then(|d| d.format(&Rfc3339).ok()).unwrap_or_default()
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct VideoParams {
-    pub video: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UploadParams {
-    pub file: String,
-    pub title: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    pub category: Option<Category>,
-    pub privacy: Option<Privacy>,
-    pub publish_at: Option<String>,
-    pub made_for_kids: Option<bool>,
-    #[serde(default)]
-    pub thumbnail: String,
-    #[serde(default)]
-    pub playlist: String,
-    #[serde(default)]
-    pub confirm: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UpdateParams {
-    pub video: String,
-    pub title: Option<String>,
-    pub description: Option<String>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    pub category: Option<Category>,
-    pub privacy: Option<Privacy>,
-    pub publish_at: Option<String>,
-    pub made_for_kids: Option<bool>,
-    #[serde(default)]
-    pub confirm: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ThumbnailParams {
-    pub video: String,
-    pub file: String,
-    #[serde(default)]
-    pub confirm: bool,
-}
-
-/// A command's params, or what's wrong with them.
-pub fn read<T: serde::de::DeserializeOwned>(params: &serde_json::Value) -> anyhow::Result<T> {
-    let params = if params.is_null() { serde_json::json!({}) } else { params.clone() };
-    serde_json::from_value(params).map_err(|e| anyhow::anyhow!("params: {e}"))
+/// An RFC 3339 time (as YouTube gives them) as a Timestamp.
+pub fn timestamp(at: &str) -> Option<Timestamp> {
+    let t = OffsetDateTime::parse(at, &Rfc3339).ok()?;
+    Some(Timestamp { seconds: t.unix_timestamp(), nanos: t.nanosecond() as i32, ..Default::default() })
 }
 
 pub fn check_video(id: &str) -> anyhow::Result<()> {
@@ -223,19 +130,33 @@ pub fn check_playlist(id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `publish_at` as YouTube takes it, if given: in the future, and only for a video that ends up private.
+fn publish_at(at: Option<&Timestamp>, privacy: Option<Privacy>) -> anyhow::Result<Option<String>> {
+    let Some(at) = at else { return Ok(None) };
+    let at = check_publish_at(&rfc3339(at))?;
+    if let Some(p) = privacy.filter(|p| *p != Privacy::PRIVACY_PRIVATE) {
+        bail!("publish_at: only a private video is scheduled, and privacy is {}", p.word());
+    }
+    Ok(Some(at))
+}
+
 impl UploadParams {
     pub fn check(&self) -> anyhow::Result<()> {
         check_title(&self.title)?;
         check_description(&self.description)?;
         check_tags(&self.tags)?;
         check_playlist(&self.playlist)?;
-        if let Some(at) = &self.publish_at {
-            check_publish_at(at)?;
-            if self.privacy.is_some_and(|p| p != Privacy::Private) {
-                bail!("publish_at: only a private video is scheduled, and privacy is {}", self.privacy.unwrap().word());
-            }
-        }
+        self.publish_at_checked()?;
         Ok(())
+    }
+
+    /// Who can see it: private unless it says.
+    pub fn privacy_or_private(&self) -> Privacy {
+        known(&self.privacy).unwrap_or(Privacy::PRIVACY_PRIVATE)
+    }
+
+    pub fn publish_at_checked(&self) -> anyhow::Result<Option<String>> {
+        publish_at(self.publish_at.as_option(), Some(self.privacy_or_private()))
     }
 }
 
@@ -249,19 +170,28 @@ impl UpdateParams {
             check_description(d)?;
         }
         check_tags(&self.tags)?;
-        if let Some(at) = &self.publish_at {
-            check_publish_at(at)?;
-            if self.privacy.is_some_and(|p| p != Privacy::Private) {
-                bail!("publish_at: only a private video is scheduled, and privacy is {}", self.privacy.unwrap().word());
-            }
-        }
+        self.publish_at_checked()?;
         Ok(())
+    }
+
+    /// A new privacy, if it asks for one.
+    pub fn new_privacy(&self) -> Option<Privacy> {
+        self.privacy.as_ref().and_then(known)
+    }
+
+    pub fn new_category(&self) -> Option<Category> {
+        self.category.as_ref().and_then(known)
+    }
+
+    pub fn publish_at_checked(&self) -> anyhow::Result<Option<String>> {
+        publish_at(self.publish_at.as_option(), self.new_privacy())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pointman_extension::typed::from_value;
 
     #[test]
     fn tags_count_as_youtube_counts_them() {
@@ -273,13 +203,14 @@ mod tests {
 
     #[test]
     fn categories_are_youtubes_ids() {
-        assert_eq!(Category::ScienceTechnology.id(), "28");
-        assert_eq!(Category::from_id("27"), Some(Category::Education));
+        assert_eq!(Category::CATEGORY_SCIENCE_TECHNOLOGY.id(), "28");
+        assert_eq!(Category::from_id("27"), Some(Category::CATEGORY_EDUCATION));
         assert_eq!(Category::from_id("30"), None, "Movies: YouTube lists it, a video can't take it");
-        assert_eq!(Category::PeopleBlogs.word(), "people_blogs");
+        assert_eq!(Category::from_id("0"), None);
+        assert_eq!(Category::CATEGORY_PEOPLE_BLOGS.word(), "people_blogs");
         let read: UploadParams =
-            read(&serde_json::json!({"file": "a.mp4", "title": "t", "category": "science_technology"})).unwrap();
-        assert_eq!(read.category, Some(Category::ScienceTechnology));
+            from_value(serde_json::json!({"file": "a.mp4", "title": "t", "category": "science_technology"})).unwrap();
+        assert_eq!(known(&read.category), Some(Category::CATEGORY_SCIENCE_TECHNOLOGY));
     }
 
     #[test]
@@ -292,6 +223,9 @@ mod tests {
         assert!(check_video("https://youtu.be/dQw4w9WgXcQ").is_err());
         assert!(check_publish_at("2020-01-01T00:00:00Z").is_err());
         assert_eq!(check_publish_at("2999-01-01T09:00:00+08:00").unwrap(), "2999-01-01T01:00:00Z");
-        assert!(read::<UpdateParams>(&serde_json::json!({"video": "dQw4w9WgXcQ", "titel": "x"})).is_err());
+        let p: UpdateParams =
+            from_value(serde_json::json!({"video": "dQw4w9WgXcQ", "publish_at": "2999-01-01T09:00:00+08:00"})).unwrap();
+        assert_eq!(p.publish_at_checked().unwrap().as_deref(), Some("2999-01-01T01:00:00Z"));
+        assert_eq!(timestamp("2026-10-03T15:04:00Z").map(|t| rfc3339(&t)).as_deref(), Some("2026-10-03T15:04:00Z"));
     }
 }

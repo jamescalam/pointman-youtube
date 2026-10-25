@@ -9,5 +9,11 @@ pub mod signin;
 pub mod upload;
 pub mod words;
 
+/// proto/youtube/v1/youtube.proto's messages, as buffa builds them (build.rs).
+pub mod proto {
+    pointman_extension::include_proto!();
+}
+pub use proto::youtube::v1;
+
 /// The vault item with the Google OAuth client: every other `youtube.<label>` is a channel's sign-in.
 pub const CLIENT_ITEM: &str = "youtube.client";

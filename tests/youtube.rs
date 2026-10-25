@@ -268,7 +268,8 @@ fn a_change_that_breaks_youtubes_rules_is_refused_before_it_is_sent() {
         (json!({"video": "abcdefghijk", "publish_at": "2999-01-01T15:00:00Z", "confirm": true}), "privacy=private"),
         (json!({"video": "abcdefghijk", "publish_at": "2020-01-01T15:00:00Z"}), "has passed"),
         (json!({"video": "https://youtu.be/abcdefghijk"}), "isn't a video id"),
-        (json!({"video": "abcdefghijk", "titel": "typo"}), "unknown field"),
+        (json!({"video": "abcdefghijk", "titel": "typo"}), "titel isn't a field"),
+        (json!({"video": "abcdefghijk", "privacy": "secret"}), "isn't one of private, unlisted, public"),
     ];
     for (params, why) in refused {
         let e = node.run("youtube.update", params.clone()).unwrap_err();
@@ -306,7 +307,7 @@ fn videos_lists_the_channel_newest_first_a_page_at_a_time() {
     let second = node.run("youtube.videos", json!({"page_size": 3, "page": next})).unwrap().result;
     let ids: Vec<&str> = second["videos"].as_array().unwrap().iter().map(|v| v["id"].as_str().unwrap()).collect();
     assert_eq!(ids, ["video000002", "video000001"]);
-    assert_eq!(second["next_page"], "");
+    assert!(second.get("next_page").is_none(), "the last page has none: {second}");
 
     let one = node.run("youtube.video", json!({"video": "video000004"})).unwrap().result;
     assert_eq!(one["title"], "Video 4");

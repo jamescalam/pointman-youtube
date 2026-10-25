@@ -1,8 +1,5 @@
 //! extension.toml within what core's manifest check takes (Pointman's src/messageboard/extensions/manifest.py), and
-//! its schemas as proto/youtube/v1/youtube.proto says them: each command's params are its `<Verb>Params`, the settings
-//! `Settings`, field for field, each field's comment its description.
-
-use std::collections::BTreeMap;
+//! its schemas as proto/youtube/v1/youtube.proto says them (the SDK's `proto::check`).
 
 use regex::Regex;
 
@@ -10,50 +7,6 @@ const ROOT: &str = env!("CARGO_MANIFEST_DIR");
 
 fn manifest() -> toml::Table {
     toml::from_str(&std::fs::read_to_string(format!("{ROOT}/extension.toml")).unwrap()).unwrap()
-}
-
-/// Each message's fields, with the comment above each: `{message: {field: comment}}`.
-fn proto() -> BTreeMap<String, BTreeMap<String, String>> {
-    let text = std::fs::read_to_string(format!("{ROOT}/proto/youtube/v1/youtube.proto")).unwrap();
-    let message = Regex::new(r"^message (\w+) \{").unwrap();
-    let field = Regex::new(r"^\s+(?:optional |repeated )?[\w.]+ (\w+) = \d+").unwrap();
-    let mut out: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
-    let (mut current, mut comment) = (String::new(), Vec::<String>::new());
-    for line in text.lines() {
-        if let Some(m) = message.captures(line) {
-            current = m[1].to_string();
-            out.entry(current.clone()).or_default();
-            if line.trim_end().ends_with("{}") {
-                current.clear();
-            }
-        } else if line.starts_with('}') {
-            current.clear();
-        } else if let Some(c) = line.trim().strip_prefix("// ") {
-            comment.push(c.to_string());
-            continue;
-        } else if let Some(f) = field.captures(line).filter(|_| !current.is_empty()) {
-            out.get_mut(&current).unwrap().insert(f[1].to_string(), comment.join(" "));
-        }
-        comment.clear();
-    }
-    out
-}
-
-fn pascal(verb: &str) -> String {
-    verb.split('_').map(|w| w[..1].to_uppercase() + &w[1..]).collect()
-}
-
-/// A schema's properties and their descriptions.
-fn properties(schema: &toml::Value) -> BTreeMap<String, String> {
-    schema
-        .get("properties")
-        .and_then(|p| p.as_table())
-        .map(|p| {
-            p.iter()
-                .map(|(k, v)| (k.clone(), v.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string()))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 #[test]
@@ -87,31 +40,11 @@ fn the_manifest_keeps_to_cores_limits() {
     }
 }
 
+/// The schemas are written from the proto by `pointman-extension manifest write`: this fails while they say something
+/// else (the README says how to install it).
 #[test]
 fn the_schemas_are_the_protos() {
-    let m = manifest();
-    let proto = proto();
-    for c in m["commands"].as_array().unwrap() {
-        let kind = c["kind"].as_str().unwrap();
-        let message = format!("{}Params", pascal(kind.trim_start_matches("youtube.")));
-        let fields = proto.get(&message).unwrap_or_else(|| panic!("{kind}: no message {message} in the proto"));
-        let params = &c["params"];
-        assert_eq!(params["type"].as_str(), Some("object"));
-        assert_eq!(params["additionalProperties"].as_bool(), Some(false), "{kind}: a mistyped param is refused");
-        assert_eq!(&properties(params), fields, "{kind}'s params are {message}'s fields, with their comments");
-        let result = format!("{}Result", pascal(kind.trim_start_matches("youtube.")));
-        assert!(proto.contains_key(&result), "{kind}: no message {result}");
-        for r in params.get("required").and_then(|r| r.as_array()).into_iter().flatten() {
-            assert!(fields.contains_key(r.as_str().unwrap()), "{kind}: {r} is required but isn't a field");
-        }
-    }
-    assert_eq!(&properties(&m["settings"]), &proto["Settings"], "the settings are Settings' fields");
-    assert_eq!(m["settings"]["additionalProperties"].as_bool(), Some(false));
-    let privacy = ["private", "unlisted", "public"];
-    for c in m["commands"].as_array().unwrap() {
-        if let Some(p) = c["params"].get("properties").and_then(|p| p.get("privacy")) {
-            let words: Vec<&str> = p["enum"].as_array().unwrap().iter().map(|w| w.as_str().unwrap()).collect();
-            assert_eq!(words, privacy, "Privacy's values, lowercase without PRIVACY_");
-        }
+    if let Err(e) = pointman_extension::proto::check(ROOT.as_ref()) {
+        panic!("{e:#}");
     }
 }

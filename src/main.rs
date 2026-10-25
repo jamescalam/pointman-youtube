@@ -14,10 +14,14 @@ use pointman_extension::protocol::{
 };
 use pointman_extension::{Extension, Handle, Job};
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::json;
 use youtube::google::{self, Api, Endpoints, OAuthClient};
-use youtube::params::{self, check_publish_at, check_video, Privacy, ThumbnailParams, UpdateParams, UploadParams};
+use youtube::params::{check_video, known, rfc3339, timestamp};
 use youtube::signin::{self, SignIns};
+use youtube::v1::{
+    AddParams, AddResult, Category, ClientParams, ClientResult, Privacy, Settings, ThumbnailParams, ThumbnailResult,
+    UpdateParams, UpdateResult, UploadParams, UploadResult, VideoParams, VideoResult, VideosParams, VideosResult,
+};
 use youtube::{channel, upload, words, CLIENT_ITEM};
 
 struct Cached {
@@ -40,7 +44,7 @@ impl Ext {
     /// The vault item of the channel's sign-in to use: the setting's, else the first by label.
     fn account(&self) -> anyhow::Result<String> {
         let channels: Vec<String> = self.h.secrets("youtube.")?.into_iter().filter(|n| n != CLIENT_ITEM).collect();
-        let want = self.h.settings()["account"].as_str().unwrap_or_default().trim().to_string();
+        let want = self.h.typed_settings::<Settings>()?.account.trim().to_string();
         if !want.is_empty() {
             let name = format!("youtube.{want}");
             if channels.contains(&name) {
@@ -123,74 +127,64 @@ fn name_of(p: &std::path::Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-fn videos(x: &Ext, job: &Job) -> anyhow::Result<Value> {
-    let p: params::VideosParams = params::read(&job.params)?;
-    let (rows, next, total) = x.api(|api| channel::videos(api, p.page_size.unwrap_or(20), &p.page))?;
-    let mut text = if rows.is_empty() {
+fn videos(x: &Ext, _: &Job, p: VideosParams) -> anyhow::Result<VideosResult> {
+    let (videos, next, total) = x.api(|api| channel::videos(api, p.page_size, &p.page))?;
+    let mut text = if videos.is_empty() {
         "No videos on the channel.".to_string()
     } else {
-        format!("{} of the channel's {} videos, newest first:", rows.len(), words::count(total))
+        format!("{} of the channel's {} videos, newest first:", videos.len(), words::count(total as u64))
     };
-    for r in &rows {
-        let when = match r["publish_at"].as_str() {
-            Some(at) => format!("goes public {}", words::day(at, true)),
-            None => words::day(r["published_at"].as_str().unwrap_or_default(), false),
+    for v in &videos {
+        let when = match v.publish_at.as_option() {
+            Some(at) => format!("goes public {}", words::day(&rfc3339(at), true)),
+            None => v.published_at.as_option().map(|at| words::day(&rfc3339(at), false)).unwrap_or_default(),
         };
-        text.push_str(&format!(
-            "\n- {} ({}, {} views, {when}): {}",
-            r["title"].as_str().unwrap_or_default(),
-            r["privacy"].as_str().unwrap_or_default(),
-            words::count(r["views"].as_u64().unwrap_or(0)),
-            r["id"].as_str().unwrap_or_default(),
-        ));
+        let privacy = known(&v.privacy).map(Privacy::word).unwrap_or_default();
+        let views = words::count(v.views as u64);
+        text.push_str(&format!("\n- {} ({privacy}, {views} views, {when}): {}", v.title, v.id));
     }
     if !next.is_empty() {
         text.push_str(&format!("\nMore: youtube.videos with page={next}"));
     }
-    Ok(json!({"text": text, "videos": rows, "next_page": next, "total": total}))
+    Ok(VideosResult { text, videos, next_page: next, total: total as i32, ..Default::default() })
 }
 
-fn video(x: &Ext, job: &Job) -> anyhow::Result<Value> {
-    let p: params::VideoParams = params::read(&job.params)?;
+fn video(x: &Ext, _: &Job, p: VideoParams) -> anyhow::Result<VideoResult> {
     check_video(&p.video)?;
     let v = x.api(|api| channel::fetch(api, &p.video, "snippet,status,statistics,contentDetails"))?;
     let (s, st) = (&v["snippet"], &v["status"]);
-    let title = s["title"].as_str().unwrap_or_default();
-    let privacy = st["privacyStatus"].as_str().unwrap_or_default();
-    let views = v["statistics"]["viewCount"].as_str().and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
-    let mut out = json!({
-        "video": p.video,
-        "url": channel::url(&p.video),
-        "title": title,
-        "description": s["description"].as_str().unwrap_or_default(),
-        "tags": s["tags"].as_array().cloned().unwrap_or_default(),
-        "category": channel::category_word(s["categoryId"].as_str().unwrap_or_default()),
-        "privacy": privacy,
-        "published_at": s["publishedAt"],
-        "views": views,
-        "duration": v["contentDetails"]["duration"].as_str().unwrap_or_default(),
-    });
-    if let Some(at) = st["publishAt"].as_str() {
-        out["publish_at"] = json!(at);
-    }
-    if let Some(k) = st["selfDeclaredMadeForKids"].as_bool() {
-        out["made_for_kids"] = json!(k);
-    }
+    let text = |k: &str| s[k].as_str().unwrap_or_default().to_string();
+    let mut out = VideoResult {
+        url: channel::url(&p.video),
+        title: text("title"),
+        description: text("description"),
+        tags: s["tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(String::from)).collect(),
+        category: channel::category_word(s["categoryId"].as_str().unwrap_or_default()),
+        privacy: channel::privacy(&v).unwrap_or_default().into(),
+        published_at: s["publishedAt"].as_str().and_then(timestamp).into(),
+        publish_at: st["publishAt"].as_str().and_then(timestamp).into(),
+        made_for_kids: st["selfDeclaredMadeForKids"].as_bool(),
+        views: channel::views(&v),
+        duration: v["contentDetails"]["duration"].as_str().unwrap_or_default().to_string(),
+        video: p.video,
+        ..Default::default()
+    };
     let schedule =
         st["publishAt"].as_str().map(|at| format!(", goes public {}", words::day(at, true))).unwrap_or_default();
-    out["text"] = json!(format!(
-        "\"{title}\" ({privacy}{schedule}, {} views): {}, {} tags, {} characters of description.",
-        words::count(views),
-        channel::url(&p.video),
-        out["tags"].as_array().map_or(0, Vec::len),
-        out["description"].as_str().map_or(0, |d| d.chars().count()),
-    ));
+    out.text = format!(
+        "\"{}\" ({}{schedule}, {} views): {}, {} tags, {} characters of description.",
+        out.title,
+        st["privacyStatus"].as_str().unwrap_or_default(),
+        words::count(out.views as u64),
+        out.url,
+        out.tags.len(),
+        out.description.chars().count(),
+    );
     Ok(out)
 }
 
-fn upload_video(x: &Ext, job: &Job) -> anyhow::Result<Value> {
-    let p: UploadParams = params::read(&job.params)?;
-    let privacy = p.privacy.unwrap_or(Privacy::Private);
+fn upload_video(x: &Ext, job: &Job, p: UploadParams) -> anyhow::Result<UploadResult> {
+    let privacy = p.privacy_or_private();
     if !p.confirm {
         bail!(
             "not uploaded: youtube.upload needs confirm=true, given only once the channel's owner has said yes to \
@@ -210,8 +204,8 @@ fn upload_video(x: &Ext, job: &Job) -> anyhow::Result<Value> {
         ),
         t => Some(upload::thumbnail_file(&x.h.allowed(t)?)?),
     };
-    let publish_at = p.publish_at.as_deref().map(check_publish_at).transpose()?;
-    let category = p.category.map(|c| c.id()).unwrap_or_else(|| "22".to_string());
+    let publish_at = p.publish_at_checked()?;
+    let category = known(&p.category).unwrap_or(Category::CATEGORY_PEOPLE_BLOGS).id();
     let mut snippet = json!({"title": p.title, "description": p.description, "categoryId": category});
     if !p.tags.is_empty() {
         snippet["tags"] = json!(p.tags);
@@ -225,7 +219,8 @@ fn upload_video(x: &Ext, job: &Job) -> anyhow::Result<Value> {
     }
     let details = json!({"snippet": snippet, "status": status});
     let resume = job.checkpoint.clone().and_then(|c| serde_json::from_value::<upload::Session>(c).ok());
-    let chunk = x.h.settings()["chunk_mib"].as_u64().unwrap_or(8).clamp(1, 256) << 20;
+    let settings: Settings = x.h.typed_settings()?;
+    let chunk = (settings.chunk_mib.clamp(1, 256) as u64) << 20;
     let size = std::fs::metadata(&path)?.len();
     let started = Instant::now();
 
@@ -233,14 +228,15 @@ fn upload_video(x: &Ext, job: &Job) -> anyhow::Result<Value> {
     let id = made["id"]
         .as_str()
         .filter(|i| !i.is_empty())
-        .ok_or_else(|| anyhow!("YouTube didn't say the new video's id"))?;
+        .ok_or_else(|| anyhow!("YouTube didn't say the new video's id"))?
+        .to_string();
     let mut text = format!(
         "Uploaded {} ({}, in {} s) as \"{}\": {}, {}",
         name_of(&path),
         words::size(size),
         started.elapsed().as_secs(),
         p.title,
-        channel::url(id),
+        channel::url(&id),
         privacy.word()
     );
     if let Some(at) = &publish_at {
@@ -250,7 +246,7 @@ fn upload_video(x: &Ext, job: &Job) -> anyhow::Result<Value> {
     let mut thumbnail = false;
     if let Some((bytes, kind)) = thumb {
         job.progress(1.0, "setting the thumbnail");
-        match x.api(|api| upload::thumbnail(api, id, &bytes, kind)) {
+        match x.api(|api| upload::thumbnail(api, &id, &bytes, kind)) {
             Ok(()) => {
                 thumbnail = true;
                 text.push_str(" Thumbnail set.");
@@ -261,7 +257,7 @@ fn upload_video(x: &Ext, job: &Job) -> anyhow::Result<Value> {
     let mut playlist = String::new();
     if !p.playlist.is_empty() {
         job.progress(1.0, "adding it to the playlist");
-        match x.api(|api| channel::add_to_playlist(api, &p.playlist, id)) {
+        match x.api(|api| channel::add_to_playlist(api, &p.playlist, &id)) {
             Ok(()) => {
                 playlist = p.playlist.clone();
                 text.push_str(&format!(" Added to playlist {}.", p.playlist));
@@ -270,34 +266,41 @@ fn upload_video(x: &Ext, job: &Job) -> anyhow::Result<Value> {
         }
     }
     text.push_str(" YouTube processes it before it plays in full.");
-    let mut out = json!({
-        "text": text, "video": id, "url": channel::url(id), "privacy": privacy.word(), "bytes": size,
-        "thumbnail": thumbnail, "playlist": playlist,
-    });
-    if let Some(at) = publish_at {
-        out["publish_at"] = json!(at);
-    }
-    Ok(out)
+    Ok(UploadResult {
+        text,
+        url: channel::url(&id),
+        video: id,
+        privacy: privacy.into(),
+        publish_at: publish_at.as_deref().and_then(timestamp).into(),
+        bytes: size as i64,
+        thumbnail,
+        playlist,
+        ..Default::default()
+    })
 }
 
-fn update(x: &Ext, job: &Job) -> anyhow::Result<Value> {
-    let p: UpdateParams = params::read(&job.params)?;
+fn update(x: &Ext, _: &Job, p: UpdateParams) -> anyhow::Result<UpdateResult> {
     p.check()?;
     let now = x.api(|api| channel::fetch(api, &p.video, "snippet,status"))?;
     let title = now["snippet"]["title"].as_str().unwrap_or_default().to_string();
     let change = channel::merge(&now, &p)?;
+    let answer = |text: String, title: String, privacy: Option<Privacy>| UpdateResult {
+        text,
+        video: p.video.clone(),
+        url: channel::url(&p.video),
+        changed: change.changed.iter().map(|c| c.to_string()).collect(),
+        title,
+        privacy: privacy.unwrap_or_default().into(),
+        ..Default::default()
+    };
     if change.changed.is_empty() {
-        return Ok(json!({
-            "text": format!("Nothing to change on \"{title}\": it has those already."),
-            "video": p.video, "url": channel::url(&p.video), "changed": [], "title": title,
-            "privacy": change.was.map(Privacy::word),
-        }));
+        return Ok(answer(format!("Nothing to change on \"{title}\": it has those already."), title, change.was));
     }
     let fields = words::and(&change.changed);
     if change.needs_confirm() && !p.confirm {
-        let why = if change.was == Some(Privacy::Public) {
+        let why = if change.was == Some(Privacy::PRIVACY_PUBLIC) {
             "it's public"
-        } else if change.becomes == Some(Privacy::Public) {
+        } else if change.becomes == Some(Privacy::PRIVACY_PUBLIC) {
             "this makes it public"
         } else {
             "this schedules it to go public"
@@ -316,21 +319,17 @@ fn update(x: &Ext, job: &Job) -> anyhow::Result<Value> {
         channel::url(&p.video),
         privacy.map(Privacy::word).unwrap_or("privacy unknown")
     );
-    Ok(json!({
-        "text": text, "video": p.video, "url": channel::url(&p.video), "changed": change.changed, "title": title,
-        "privacy": privacy.map(Privacy::word),
-    }))
+    Ok(answer(text, title, privacy))
 }
 
-fn thumbnail(x: &Ext, job: &Job) -> anyhow::Result<Value> {
-    let p: ThumbnailParams = params::read(&job.params)?;
+fn thumbnail(x: &Ext, _: &Job, p: ThumbnailParams) -> anyhow::Result<ThumbnailResult> {
     check_video(&p.video)?;
     let path = x.file(&p.file, "file")?;
     let (bytes, kind) = upload::thumbnail_file(&path)?;
     x.api(|api| {
         let now = channel::fetch(api, &p.video, "snippet,status")?;
         let title = now["snippet"]["title"].as_str().unwrap_or_default().to_string();
-        if channel::privacy(&now) == Some(Privacy::Public) && !p.confirm {
+        if channel::privacy(&now) == Some(Privacy::PRIVACY_PUBLIC) && !p.confirm {
             bail!(
                 "not changed: \"{title}\" ({}) is public, so youtube.thumbnail needs confirm=true, given only once the \
                  channel's owner has said yes to its new thumbnail",
@@ -338,10 +337,12 @@ fn thumbnail(x: &Ext, job: &Job) -> anyhow::Result<Value> {
             );
         }
         upload::thumbnail(api, &p.video, &bytes, kind)?;
-        Ok(json!({
-            "text": format!("Set the thumbnail of \"{title}\" ({}) from {}.", channel::url(&p.video), name_of(&path)),
-            "video": p.video, "url": channel::url(&p.video),
-        }))
+        Ok(ThumbnailResult {
+            text: format!("Set the thumbnail of \"{title}\" ({}) from {}.", channel::url(&p.video), name_of(&path)),
+            url: channel::url(&p.video),
+            video: p.video.clone(),
+            ..Default::default()
+        })
     })
 }
 
@@ -355,25 +356,33 @@ fn main() -> anyhow::Result<()> {
     });
     let signins = Arc::new(SignIns::default());
 
-    for (kind, f) in [
-        ("youtube.videos", videos as fn(&Ext, &Job) -> anyhow::Result<Value>),
-        ("youtube.video", video),
-        ("youtube.upload", upload_video),
-        ("youtube.update", update),
-        ("youtube.thumbnail", thumbnail),
-    ] {
-        let x = x.clone();
-        ext.command(kind, move |job: &Job| f(&x, job));
-    }
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: VideosParams| videos(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: VideoParams| video(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: UploadParams| upload_video(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: UpdateParams| update(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: ThumbnailParams| thumbnail(&xx, job, p));
 
     // `/youtube add` and `/youtube client` posted (an agent, an older app): the apps open the forms for them
-    ext.command("youtube.add", |_: &Job| {
-        Ok(json!({"text": "A YouTube channel is signed in from the Pointman app, so its token never goes in a post: \
-                           type `/youtube add` there and tap Sign in."}))
+    ext.typed_command(|_: &Job, _: AddParams| {
+        Ok(AddResult {
+            text: "A YouTube channel is signed in from the Pointman app, so its token never goes in a post: type \
+                   `/youtube add` there and tap Sign in."
+                .into(),
+            ..Default::default()
+        })
     });
-    ext.command("youtube.client", |_: &Job| {
-        Ok(json!({"text": "The Google OAuth client is added in the Pointman app, so its secret never goes in a post: \
-                           type `/youtube client` there and paste its client ID and secret."}))
+    ext.typed_command(|_: &Job, _: ClientParams| {
+        Ok(ClientResult {
+            text: "The Google OAuth client is added in the Pointman app, so its secret never goes in a post: type \
+                   `/youtube client` there and paste its client ID and secret."
+                .into(),
+            ..Default::default()
+        })
     });
 
     // Sign in from the apps: Google's device flow
