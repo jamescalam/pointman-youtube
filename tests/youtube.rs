@@ -223,6 +223,7 @@ fn a_public_video_is_changed_only_with_confirm() {
     let node = node(&fake, dir.path());
     let refused = [
         ("youtube.update", json!({"video": "publicvid01", "description": "changed"}), "it's public"),
+        ("youtube.update", json!({"video": "publicvid01", "privacy": "private"}), "it's public"),
         ("youtube.update", json!({"video": "privatevid1", "privacy": "public"}), "this makes it public"),
         (
             "youtube.update",
