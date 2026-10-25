@@ -1,12 +1,12 @@
 ---
 name: youtube
-description: How to research, write and design a YouTube upload's packaging (title, thumbnail, description, chapters, tags) on Pointman, for any channel. Use it when a task is any of those.
+description: How to research, write and design a YouTube upload's packaging (title, thumbnail, description, chapters, tags) on Pointman, for any channel, and how to upload it and change a video's details on the channel with the youtube commands. Use it when a task is any of those.
 ---
 
 # YouTube publishing
 
-For tasks on a video's titles, thumbnails, description, chapters, tags or social posts. Skip it
-otherwise. `references/` and `scripts/` are in this behaviour's folder; your work (`research/`,
+For tasks on a video's titles, thumbnails, description, chapters, tags or social posts, and for
+uploading it or changing a video on the channel. Skip it otherwise. `references/` and `scripts/` are in this behaviour's folder; your work (`research/`,
 `publish/`) goes in the video's folder.
 
 **The channel file.** `channel.md` lives in the channel's own folder (make it if it's missing). It
@@ -34,5 +34,26 @@ thumbnails before anyone sees it.
 searched name in a title's first ~45 characters, chapters from the final cut (not the script),
 every number and link checked against its source, and one paste-ready `publish/description.md`.
 
-**Stop and ask** before uploading, publishing or changing anything on the live channel, and before
-using a face, logo or footage the channel doesn't own.
+**On the channel:** the `youtube` commands, on the machine with the channel signed in: `create_job`
+(or `/youtube <verb>` in a thread). `video` is the 11-character id; `file` is a board file
+(`pointman://asset/<id>`) or a path on that machine.
+
+| For | Command |
+|---|---|
+| What's on the channel: ids, titles, privacy, views, newest first | `youtube.videos {page_size?, page?}` |
+| One video's title, description, tags, category, privacy, schedule | `youtube.video {video}` |
+| A new video, private unless said | `youtube.upload {file, title, description, tags, category, privacy, publish_at?, made_for_kids?, thumbnail?, playlist?, confirm}` |
+| Change its details: only the fields given change | `youtube.update {video, title?, description?, tags?, category?, privacy?, publish_at?, made_for_kids?, confirm?}` |
+| Its thumbnail (JPEG or PNG, at most 2 MB) | `youtube.thumbnail {video, file, confirm?}` |
+
+- **Ask the owner first, every time.** Before an upload, or any change to a public video (making one
+  public or scheduling it counts), post exactly what will go up or change as a decision. Pass
+  `confirm: true` only after their yes, for what they said yes to. Never set it on your own.
+- Upload private (the default) and let the owner publish, or schedule it with `publish_at` once they
+  pick the time.
+- `description` and `tags` replace the whole field: read it with `youtube.video`, edit, send it all.
+- The upload's `thumbnail` is a path on that machine. For a board file, run `youtube.thumbnail` after.
+- Not signed in? Ask the owner to run `/youtube client` (once) and `/youtube add` in the app. Never
+  ask for, paste or post a token. Uploads have a daily quota: don't retry a failed one in a loop.
+
+**Stop and ask** before using a face, logo or footage the channel doesn't own.

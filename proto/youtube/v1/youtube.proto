@@ -1,0 +1,208 @@
+// The YouTube extension's commands and settings: the source of extension.toml's `params` and `[settings]` schemas.
+// Command `youtube.<verb>` takes `<Verb>Params` and answers `<Verb>Result`. A field's comment is its description, and
+// its buf.validate rules are its limits. YouTube's own limits are from the Data API v3 reference
+// (https://developers.google.com/youtube/v3/docs/videos#properties).
+syntax = "proto3";
+
+package youtube.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// The extension's settings, per machine.
+message Settings {
+  // The label of the YouTube sign-in to use (main, for the vault's youtube.main). Empty: the first, by label.
+  string account = 1 [(buf.validate.field).string = {max_len: 32, pattern: "^([a-z0-9][a-z0-9._-]*)?$"}];
+  // How much of a video each upload request sends, in MiB (default 8). A dropped connection resends at most one.
+  int32 chunk_mib = 2 [(buf.validate.field).int32 = {gte: 1, lte: 256}];
+}
+
+// Who can see a video.
+enum Privacy {
+  PRIVACY_UNSPECIFIED = 0;
+  // Only the channel, and people it shares it with.
+  PRIVACY_PRIVATE = 1;
+  // Anyone with the link; not in search or on the channel page.
+  PRIVACY_UNLISTED = 2;
+  // Everyone.
+  PRIVACY_PUBLIC = 3;
+}
+
+// A video's category. Each value's number is YouTube's category id.
+enum Category {
+  CATEGORY_UNSPECIFIED = 0;
+  CATEGORY_FILM_ANIMATION = 1;
+  CATEGORY_AUTOS_VEHICLES = 2;
+  CATEGORY_MUSIC = 10;
+  CATEGORY_PETS_ANIMALS = 15;
+  CATEGORY_SPORTS = 17;
+  CATEGORY_TRAVEL_EVENTS = 19;
+  CATEGORY_GAMING = 20;
+  CATEGORY_PEOPLE_BLOGS = 22;
+  CATEGORY_COMEDY = 23;
+  CATEGORY_ENTERTAINMENT = 24;
+  CATEGORY_NEWS_POLITICS = 25;
+  CATEGORY_HOWTO_STYLE = 26;
+  CATEGORY_EDUCATION = 27;
+  CATEGORY_SCIENCE_TECHNOLOGY = 28;
+  CATEGORY_NONPROFITS_ACTIVISM = 29;
+}
+
+// youtube.videos: the channel's videos, newest first.
+message VideosParams {
+  // How many videos to list (default 20).
+  int32 page_size = 1 [(buf.validate.field).int32 = {gte: 1, lte: 50}];
+  // The next page: an earlier answer's next_page. Empty: the newest.
+  string page = 2 [(buf.validate.field).string.max_len = 200];
+}
+
+message VideosResult {
+  string text = 1;
+  repeated Video videos = 2;
+  // The page after this one, for `page`; empty on the last.
+  string next_page = 3;
+  // The channel's uploads in all.
+  int32 total = 4;
+}
+
+// One of the channel's videos, as youtube.videos lists it.
+message Video {
+  string id = 1;
+  string title = 2;
+  Privacy privacy = 3;
+  // When it was published, or uploaded if it isn't public yet.
+  google.protobuf.Timestamp published_at = 4;
+  // When a private video goes public by itself, if it's scheduled.
+  google.protobuf.Timestamp publish_at = 5;
+  int64 views = 6;
+  string url = 7;
+}
+
+// youtube.video: one video's details, as youtube.update would change them.
+message VideoParams {
+  // The video's id: the 11 characters after watch?v= or youtu.be/.
+  string video = 1 [(buf.validate.field).required = true, (buf.validate.field).string.pattern = "^[A-Za-z0-9_-]{11}$"];
+}
+
+message VideoResult {
+  string text = 1;
+  string video = 2;
+  string url = 3;
+  string title = 4;
+  string description = 5;
+  repeated string tags = 6;
+  // Its category's name, or YouTube's id when it isn't one youtube.update can set.
+  string category = 7;
+  Privacy privacy = 8;
+  google.protobuf.Timestamp published_at = 9;
+  google.protobuf.Timestamp publish_at = 10;
+  // The channel's answer to YouTube's made-for-kids question, if it gave one.
+  optional bool made_for_kids = 11;
+  int64 views = 12;
+  // Its length, as YouTube says it (PT12M3S).
+  string duration = 13;
+}
+
+// youtube.upload: a new video on the channel, private unless it says otherwise.
+message UploadParams {
+  // The video: a board file (pointman://asset/<id>, which the node fetches) or a path in the folders the node lets the extension use.
+  string file = 1 [(buf.validate.field).required = true, (buf.validate.field).string.min_len = 1];
+  // Its title: at most 100 characters, without < or >.
+  string title = 2 [(buf.validate.field).required = true, (buf.validate.field).string = {min_len: 1, max_len: 100, pattern: "^[^<>]*$"}];
+  // Its description: at most 5,000 bytes, without < or >.
+  string description = 3 [(buf.validate.field).string = {max_bytes: 5000, pattern: "^[^<>]*$"}];
+  // Its tags, most important first: at most 500 characters in all, counting a comma between each and 2 for a tag with a space.
+  repeated string tags = 4 [(buf.validate.field).repeated = {max_items: 100, items: {string: {min_len: 1, max_len: 100}}}];
+  // Its category (default people_blogs, YouTube's own default).
+  Category category = 5;
+  // Who can see it (default private).
+  Privacy privacy = 6;
+  // When it goes public by itself (RFC 3339, 2026-11-02T15:00:00Z), in the future. Only for a private video.
+  google.protobuf.Timestamp publish_at = 7;
+  // Whether it's made for kids. Left out: the channel's default from YouTube Studio.
+  optional bool made_for_kids = 8;
+  // A thumbnail to set once it's up: a JPEG or PNG path on this machine, at most 2 MB. A board file goes through youtube.thumbnail afterwards.
+  string thumbnail = 9;
+  // A playlist to add it to: its id (PL…).
+  string playlist = 10 [(buf.validate.field).string = {max_len: 64, pattern: "^([A-Za-z0-9_-]+)?$"}];
+  // True once the channel's owner has said yes to this upload. Without it, nothing is uploaded.
+  bool confirm = 11;
+}
+
+message UploadResult {
+  string text = 1;
+  string video = 2;
+  string url = 3;
+  Privacy privacy = 4;
+  google.protobuf.Timestamp publish_at = 5;
+  int64 bytes = 6;
+  // Whether the thumbnail was set; why not is in `text`.
+  bool thumbnail = 7;
+  // The playlist it was added to, if it was.
+  string playlist = 8;
+}
+
+// youtube.update: change a video's details. Only the fields given change; the rest stay as they are.
+message UpdateParams {
+  // The video's id: the 11 characters after watch?v= or youtu.be/.
+  string video = 1 [(buf.validate.field).required = true, (buf.validate.field).string.pattern = "^[A-Za-z0-9_-]{11}$"];
+  // A new title: at most 100 characters, without < or >.
+  optional string title = 2 [(buf.validate.field).string = {min_len: 1, max_len: 100, pattern: "^[^<>]*$"}];
+  // A new description, all of it: at most 5,000 bytes, without < or >.
+  optional string description = 3 [(buf.validate.field).string = {max_bytes: 5000, pattern: "^[^<>]*$"}];
+  // New tags, replacing all of them. Empty or left out: unchanged.
+  repeated string tags = 4 [(buf.validate.field).repeated = {max_items: 100, items: {string: {min_len: 1, max_len: 100}}}];
+  // A new category.
+  optional Category category = 5;
+  // Who can see it. Public publishes it.
+  optional Privacy privacy = 6;
+  // When it goes public by itself (RFC 3339), in the future: it stays private until then.
+  google.protobuf.Timestamp publish_at = 7;
+  // Whether it's made for kids.
+  optional bool made_for_kids = 8;
+  // True once the channel's owner has said yes. Needed to change a public video, make one public or schedule it.
+  bool confirm = 9;
+}
+
+message UpdateResult {
+  string text = 1;
+  string video = 2;
+  string url = 3;
+  // The fields it changed (title, description, tags, category, privacy, publish_at, made_for_kids).
+  repeated string changed = 4;
+  string title = 5;
+  Privacy privacy = 6;
+}
+
+// youtube.thumbnail: a video's thumbnail.
+message ThumbnailParams {
+  // The video's id: the 11 characters after watch?v= or youtu.be/.
+  string video = 1 [(buf.validate.field).required = true, (buf.validate.field).string.pattern = "^[A-Za-z0-9_-]{11}$"];
+  // The image: a board file (pointman://asset/<id>) or a path in the extension's folders. A JPEG or PNG, at most 2 MB.
+  string file = 2 [(buf.validate.field).required = true, (buf.validate.field).string.min_len = 1];
+  // True once the channel's owner has said yes. Needed for a public video's.
+  bool confirm = 3;
+}
+
+message ThumbnailResult {
+  string text = 1;
+  string video = 2;
+  string url = 3;
+}
+
+// youtube.add: a YouTube sign-in, added in the apps.
+message AddParams {
+  // What to call it (main): lowercase letters, digits, . _ -
+  string name = 1 [(buf.validate.field).string = {max_len: 32, pattern: "^([a-z0-9][a-z0-9._-]*)?$"}];
+}
+
+message AddResult {
+  string text = 1;
+}
+
+// youtube.client: the Google OAuth client the sign-ins use, added in the apps.
+message ClientParams {}
+
+message ClientResult {
+  string text = 1;
+}

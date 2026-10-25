@@ -1,0 +1,25 @@
+[package]
+name = "youtube"
+version = "0.3.0"
+edition = "2021"
+description = "YouTube on Pointman: upload videos and edit their details on a channel, through the YouTube Data API v3."
+license = "MIT"
+repository = "https://github.com/jamescalam/pointman-youtube"
+publish = false
+
+[dependencies]
+anyhow = "1"
+pointman-extension = { git = "https://github.com/pointman-ai/pointman-extension", rev = "39f372506a0556d817e43eda7c6f007fe4b45cb7" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+ureq = { version = "2", features = ["json"] }
+
+[dev-dependencies]
+tempfile = "3"
+toml = "0.8"
+
+[profile.release]
+strip = true
+lto = true
