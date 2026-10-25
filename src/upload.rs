@@ -16,7 +16,7 @@ use pointman_extension::Job;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::google::{json, Api, Failure};
+use crate::google::{json, send, Api, Failure};
 use crate::words;
 
 /// Failures in a row before an upload gives up.
@@ -91,14 +91,16 @@ fn failure(e: anyhow::Error) -> Result<Failure, anyhow::Error> {
 pub fn start(api: &Api, path: &Path, size: u64, details: &Value) -> anyhow::Result<String> {
     let url = api.upload_url("videos");
     let r = api.call(|auth| {
-        api.agent
-            .post(&url)
-            .query("uploadType", "resumable")
-            .query("part", "snippet,status")
-            .set("Authorization", auth)
-            .set("X-Upload-Content-Length", &size.to_string())
-            .set("X-Upload-Content-Type", content_type(path))
-            .send_json(details.clone())
+        send(
+            api.agent
+                .post(&url)
+                .query("uploadType", "resumable")
+                .query("part", "snippet,status")
+                .set("Authorization", auth)
+                .set("X-Upload-Content-Length", &size.to_string())
+                .set("X-Upload-Content-Type", content_type(path))
+                .send_json(details.clone()),
+        )
     })?;
     r.header("Location")
         .map(String::from)
@@ -109,11 +111,13 @@ pub fn start(api: &Api, path: &Path, size: u64, details: &Value) -> anyhow::Resu
 /// How much of the video the session has.
 pub fn status(api: &Api, session: &str, size: u64) -> anyhow::Result<Sent> {
     let r = api.call(|auth| {
-        api.agent
-            .put(session)
-            .set("Authorization", auth)
-            .set("Content-Range", &format!("bytes */{size}"))
-            .send_bytes(&[])
+        send(
+            api.agent
+                .put(session)
+                .set("Authorization", auth)
+                .set("Content-Range", &format!("bytes */{size}"))
+                .send_bytes(&[]),
+        )
     })?;
     Ok(sent(r)?)
 }
@@ -124,11 +128,13 @@ fn chunk(api: &Api, session: &str, file: &mut File, from: u64, to: u64, size: u6
     file.seek(SeekFrom::Start(from))?;
     file.read_exact(&mut buf).context("couldn't read the video")?;
     let r = api.call(|auth| {
-        api.agent
-            .put(session)
-            .set("Authorization", auth)
-            .set("Content-Range", &format!("bytes {from}-{}/{size}", to - 1))
-            .send_bytes(&buf)
+        send(
+            api.agent
+                .put(session)
+                .set("Authorization", auth)
+                .set("Content-Range", &format!("bytes {from}-{}/{size}", to - 1))
+                .send_bytes(&buf),
+        )
     })?;
     Ok(sent(r)?)
 }
@@ -275,13 +281,15 @@ pub fn thumbnail_file(path: &Path) -> anyhow::Result<(Vec<u8>, &'static str)> {
 pub fn thumbnail(api: &Api, video: &str, bytes: &[u8], kind: &str) -> anyhow::Result<()> {
     let url = api.upload_url("thumbnails/set");
     api.call(|auth| {
-        api.agent
-            .post(&url)
-            .query("videoId", video)
-            .query("uploadType", "media")
-            .set("Authorization", auth)
-            .set("Content-Type", kind)
-            .send_bytes(bytes)
+        send(
+            api.agent
+                .post(&url)
+                .query("videoId", video)
+                .query("uploadType", "media")
+                .set("Authorization", auth)
+                .set("Content-Type", kind)
+                .send_bytes(bytes),
+        )
     })?;
     Ok(())
 }

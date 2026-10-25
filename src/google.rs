@@ -202,12 +202,13 @@ impl Api<'_> {
     }
 
     /// One request, made by `make` with the token's header, again with a new token after a 401.
-    pub fn call(&self, make: impl Fn(&str) -> Result<ureq::Response, ureq::Error>) -> anyhow::Result<ureq::Response> {
+    /// `make` sends the request with the header's value, its answer through [`send`].
+    pub fn call(&self, make: impl Fn(&str) -> Result<ureq::Response, Failure>) -> anyhow::Result<ureq::Response> {
         let auth = format!("Bearer {}", (self.token)(false)?);
-        match send(make(&auth)) {
+        match make(&auth) {
             Err(Failure::Said { status: 401, .. }) => {
                 let auth = format!("Bearer {}", (self.token)(true)?);
-                Ok(send(make(&auth))?)
+                Ok(make(&auth)?)
             }
             got => Ok(got?),
         }
@@ -220,7 +221,7 @@ impl Api<'_> {
             for (k, v) in query {
                 req = req.query(k, v);
             }
-            req.call()
+            send(req.call())
         })?;
         Ok(json(r)?)
     }
@@ -232,7 +233,7 @@ impl Api<'_> {
             for (k, v) in query {
                 req = req.query(k, v);
             }
-            req.send_json(body.clone())
+            send(req.send_json(body.clone()))
         })?;
         Ok(json(r)?)
     }
