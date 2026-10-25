@@ -3,8 +3,8 @@
 # Data API v3. The channel is signed in from the apps with Google's device flow; the OAuth client and each sign-in's
 # refresh token live in the vault, never in a file.
 #
-# The commands' params and [settings] are written from proto/youtube/v1/youtube.proto (`<Verb>Params`, `Settings`):
-# change the proto, then the schemas here.
+# The commands' params and [settings] are written from proto/youtube/v1/youtube.proto (`<Verb>Params`, `Settings`) by
+# the SDK's `pointman-extension manifest write`: change the proto, then write them again.
 
 [extension]
 id = "youtube"
@@ -48,37 +48,42 @@ value = '1//[A-Za-z0-9_-]{20,512}'
 placeholder = "1//0g…"
 sign_in = true
 
+# From Settings in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [settings]
 type = "object"
-additionalProperties = false
+description = "The extension's settings, per machine."
 
 [settings.properties.account]
 type = "string"
 description = "The label of the YouTube sign-in to use (main, for the vault's youtube.main). Empty: the first, by label."
 maxLength = 32
 pattern = "^([a-z0-9][a-z0-9._-]*)?$"
-default = ""
 
 [settings.properties.chunk_mib]
 type = "integer"
 description = "How much of a video each upload request sends, in MiB (default 8). A dropped connection resends at most one."
+default = 8
 minimum = 1
 maximum = 256
-default = 8
 
 [[commands]]
 kind = "youtube.videos"
 title = "List the channel's videos, newest first"
 slash = "videos"
 summary = "The channel's videos: id, title, privacy, publish time and views, newest first"
+
+# From VideosParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
+description = "youtube.videos: the channel's videos, newest first."
+
 [commands.params.properties.page_size]
 type = "integer"
 description = "How many videos to list (default 20)."
+default = 20
 minimum = 1
 maximum = 50
+
 [commands.params.properties.page]
 type = "string"
 description = "The next page: an earlier answer's next_page. Empty: the newest."
@@ -89,10 +94,13 @@ kind = "youtube.video"
 title = "One video's details (video)"
 slash = "video"
 summary = "A video's title, description, tags, category, privacy and schedule, as youtube.update changes them"
+
+# From VideoParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
+description = "youtube.video: one video's details, as youtube.update would change them."
 required = ["video"]
-additionalProperties = false
+
 [commands.params.properties.video]
 type = "string"
 description = "The video's id: the 11 characters after watch?v= or youtu.be/."
@@ -106,52 +114,68 @@ cancellable = true
 resumable = true
 slash = "upload"
 summary = "Upload a video to the channel, private unless said; needs confirm=true, given once the owner said yes"
+
+# From UploadParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
+description = "youtube.upload: a new video on the channel, private unless it says otherwise."
 required = ["file", "title"]
-additionalProperties = false
+
 [commands.params.properties.file]
 type = "string"
 description = "The video: a board file (pointman://asset/<id>, which the node fetches) or a path in the folders the node lets the extension use."
 minLength = 1
+
 [commands.params.properties.title]
 type = "string"
 description = "Its title: at most 100 characters, without < or >."
 minLength = 1
 maxLength = 100
 pattern = "^[^<>]*$"
+
 [commands.params.properties.description]
 type = "string"
 description = "Its description: at most 5,000 bytes, without < or >."
+maxLength = 5000
 pattern = "^[^<>]*$"
+
 [commands.params.properties.tags]
 type = "array"
 description = "Its tags, most important first: at most 500 characters in all, counting a comma between each and 2 for a tag with a space."
-maxItems = 100
 items = { type = "string", minLength = 1, maxLength = 100 }
+maxItems = 100
+
 [commands.params.properties.category]
 type = "string"
 description = "Its category (default people_blogs, YouTube's own default)."
 enum = ["film_animation", "autos_vehicles", "music", "pets_animals", "sports", "travel_events", "gaming", "people_blogs", "comedy", "entertainment", "news_politics", "howto_style", "education", "science_technology", "nonprofits_activism"]
+default = "people_blogs"
+
 [commands.params.properties.privacy]
 type = "string"
 description = "Who can see it (default private)."
 enum = ["private", "unlisted", "public"]
+default = "private"
+
 [commands.params.properties.publish_at]
 type = "string"
-format = "date-time"
 description = "When it goes public by itself (RFC 3339, 2026-11-02T15:00:00Z), in the future. Only for a private video."
+format = "date-time"
+
 [commands.params.properties.made_for_kids]
 type = "boolean"
 description = "Whether it's made for kids. Left out: the channel's default from YouTube Studio."
+
 [commands.params.properties.thumbnail]
 type = "string"
 description = "A thumbnail to set once it's up: a JPEG or PNG path on this machine, at most 2 MB. A board file goes through youtube.thumbnail afterwards."
+
 [commands.params.properties.playlist]
 type = "string"
 description = "A playlist to add it to: its id (PL…)."
 maxLength = 64
 pattern = "^([A-Za-z0-9_-]+)?$"
+
 [commands.params.properties.confirm]
 type = "boolean"
 description = "True once the channel's owner has said yes to this upload. Without it, nothing is uploaded."
@@ -161,44 +185,56 @@ kind = "youtube.update"
 title = "Change a video's details (video, title?, …, confirm?)"
 slash = "update"
 summary = "Change a video's title, description, tags, category, privacy or schedule; a public one needs confirm=true"
+
+# From UpdateParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
+description = "youtube.update: change a video's details. Only the fields given change; the rest stay as they are."
 required = ["video"]
-additionalProperties = false
+
 [commands.params.properties.video]
 type = "string"
 description = "The video's id: the 11 characters after watch?v= or youtu.be/."
 pattern = "^[A-Za-z0-9_-]{11}$"
+
 [commands.params.properties.title]
 type = "string"
 description = "A new title: at most 100 characters, without < or >."
 minLength = 1
 maxLength = 100
 pattern = "^[^<>]*$"
+
 [commands.params.properties.description]
 type = "string"
 description = "A new description, all of it: at most 5,000 bytes, without < or >."
+maxLength = 5000
 pattern = "^[^<>]*$"
+
 [commands.params.properties.tags]
 type = "array"
 description = "New tags, replacing all of them. Empty or left out: unchanged."
-maxItems = 100
 items = { type = "string", minLength = 1, maxLength = 100 }
+maxItems = 100
+
 [commands.params.properties.category]
 type = "string"
 description = "A new category."
 enum = ["film_animation", "autos_vehicles", "music", "pets_animals", "sports", "travel_events", "gaming", "people_blogs", "comedy", "entertainment", "news_politics", "howto_style", "education", "science_technology", "nonprofits_activism"]
+
 [commands.params.properties.privacy]
 type = "string"
 description = "Who can see it. Public publishes it."
 enum = ["private", "unlisted", "public"]
+
 [commands.params.properties.publish_at]
 type = "string"
-format = "date-time"
 description = "When it goes public by itself (RFC 3339), in the future: it stays private until then."
+format = "date-time"
+
 [commands.params.properties.made_for_kids]
 type = "boolean"
 description = "Whether it's made for kids."
+
 [commands.params.properties.confirm]
 type = "boolean"
 description = "True once the channel's owner has said yes. Needed to change a public video, make one public or schedule it."
@@ -208,18 +244,23 @@ kind = "youtube.thumbnail"
 title = "Set a video's thumbnail (video, file, confirm?)"
 slash = "thumbnail"
 summary = "Set a video's thumbnail from a JPEG or PNG; a public video's needs confirm=true"
+
+# From ThumbnailParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
+description = "youtube.thumbnail: a video's thumbnail."
 required = ["video", "file"]
-additionalProperties = false
+
 [commands.params.properties.video]
 type = "string"
 description = "The video's id: the 11 characters after watch?v= or youtu.be/."
 pattern = "^[A-Za-z0-9_-]{11}$"
+
 [commands.params.properties.file]
 type = "string"
 description = "The image: a board file (pointman://asset/<id>) or a path in the extension's folders. A JPEG or PNG, at most 2 MB."
 minLength = 1
+
 [commands.params.properties.confirm]
 type = "boolean"
 description = "True once the channel's owner has said yes. Needed for a public video's."
@@ -230,9 +271,12 @@ title = "Add a YouTube channel"
 slash = "add"
 form = "account"
 summary = "Sign a YouTube channel in for this machine's uploads and edits"
+
+# From AddParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
+description = "youtube.add: a YouTube sign-in, added in the apps."
+
 [commands.params.properties.name]
 type = "string"
 description = "What to call it (main): lowercase letters, digits, . _ -"
@@ -245,6 +289,8 @@ title = "Add the Google OAuth client"
 slash = "client"
 form = "client"
 summary = "Add the Google OAuth client that YouTube sign-ins go through"
+
+# From ClientParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
+description = "youtube.client: the Google OAuth client the sign-ins use, added in the apps."

@@ -71,8 +71,9 @@ The tests run the extension under the SDK's stand-in node against a fake YouTube
 changes that keep every other field, refusals without `confirm`, the device-flow sign-in, and a token
 that has run out. No real channel is called.
 
-`extension.toml`'s params and settings schemas are written from `proto/youtube/v1/youtube.proto`:
-`tests/manifest.rs` checks they match it field for field. A release is a tag that's the manifest's
+`extension.toml`'s params and settings schemas are written from `proto/youtube/v1/youtube.proto` by the
+SDK's `pointman-extension manifest write`: change the proto, then write them again. `tests/manifest.rs`
+checks they match it field for field. A release is a tag that's the manifest's
 version (`git tag v0.3.0 && git push origin v0.3.0`): `.github/workflows/release.yml` builds the four
 platforms and attaches them to the release.
 

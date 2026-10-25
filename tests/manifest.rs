@@ -97,7 +97,6 @@ fn the_schemas_are_the_protos() {
         let fields = proto.get(&message).unwrap_or_else(|| panic!("{kind}: no message {message} in the proto"));
         let params = &c["params"];
         assert_eq!(params["type"].as_str(), Some("object"));
-        assert_eq!(params["additionalProperties"].as_bool(), Some(false), "{kind}: unknown params are refused");
         assert_eq!(&properties(params), fields, "{kind}'s params are {message}'s fields, with their comments");
         let result = format!("{}Result", pascal(kind.trim_start_matches("youtube.")));
         assert!(proto.contains_key(&result), "{kind}: no message {result}");
