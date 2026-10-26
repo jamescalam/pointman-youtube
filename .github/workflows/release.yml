@@ -53,7 +53,17 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - if: matrix.test
         run: cargo test --locked --target ${{ matrix.target }}
-      - run: cargo build --release --locked --target ${{ matrix.target }}
+      # the Google OAuth client sign-ins go through when a node has none of its own (src/google.rs): only in this
+      # build, so the tests above keep the fake's
+      - name: Build, with the default client
+        env:
+          YOUTUBE_DEFAULT_CLIENT: ${{ secrets.YOUTUBE_DEFAULT_CLIENT }}
+        run: |
+          if [ -z "$YOUTUBE_DEFAULT_CLIENT" ]; then
+            echo "the repo has no YOUTUBE_DEFAULT_CLIENT secret: a release is built with the default client" >&2
+            exit 1
+          fi
+          cargo build --release --locked --target ${{ matrix.target }}
       - name: Pack ${{ matrix.platform }}
         run: |
           mkdir -p pkg/bin

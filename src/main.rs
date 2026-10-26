@@ -57,22 +57,28 @@ impl Ext {
             );
         }
         channels.into_iter().min().ok_or_else(|| {
+            let client = match google::default_client() {
+                Some(_) => "",
+                None => "add the Google OAuth client (/youtube client) if it isn't there, then ",
+            };
             anyhow!(
-                "no YouTube channel is signed in on {}: add the Google OAuth client (/youtube client) if it isn't there, \
-                 then type /youtube add in the app and tap Sign in",
+                "no YouTube channel is signed in on {}: {client}type /youtube add in the app and tap Sign in",
                 self.machine()
             )
         })
     }
 
+    /// The node's own `youtube.client` when it has one, else the one the release was built with.
     fn client(&self) -> anyhow::Result<OAuthClient> {
-        let value = self.h.secret(CLIENT_ITEM).map_err(|_| {
-            anyhow!(
-                "no Google OAuth client on {}: type /youtube client in the app and paste a TVs and Limited Input \
-                 client's ID and secret",
-                self.machine()
-            )
-        })?;
+        let Ok(value) = self.h.secret(CLIENT_ITEM) else {
+            return google::default_client().ok_or_else(|| {
+                anyhow!(
+                    "no Google OAuth client on {}: type /youtube client in the app and paste a TVs and Limited Input \
+                     client's ID and secret",
+                    self.machine()
+                )
+            });
+        };
         OAuthClient::parse(&value).ok_or_else(|| {
             anyhow!(
                 "{CLIENT_ITEM} isn't a client ID and secret (…apps.googleusercontent.com, a space, then the secret)"

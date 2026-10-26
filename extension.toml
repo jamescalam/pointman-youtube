@@ -9,7 +9,7 @@
 [extension]
 id = "youtube"
 name = "YouTube"
-version = "0.3.0"
+version = "0.3.1"
 publisher = "jamescalam"
 summary = "Upload videos and edit their titles, descriptions, tags and thumbnails on a YouTube channel, with research and packaging the channel's owner picks."
 node = ">=0.3,<1"
@@ -28,12 +28,13 @@ files = ["references", "scripts"]
 network = true                   # YouTube's Data API and Google's OAuth endpoints
 secrets = ["youtube.*"]          # youtube.client (the OAuth client) and youtube.<label> (each channel's sign-in)
 
-# The Google OAuth client the sign-ins go through: a "TVs and Limited Input devices" client in a Google Cloud project
-# with the YouTube Data API v3 turned on.
+# Your own Google OAuth client, if you'd rather the sign-ins went through it than through the one the extension comes
+# with: a "TVs and Limited Input devices" client in a Google Cloud project with the YouTube Data API v3 turned on.
 [[credentials]]
 id = "client"
-title = "Google OAuth client"
-help = "In Google Cloud console: APIs & Services › Credentials › Create OAuth client ID › TVs and Limited Input devices. Paste its client ID, a space, then its client secret."
+title = "Your own Google OAuth client (optional)"
+help = "Only to use your own Google Cloud project instead of the one YouTube comes with. In Google Cloud console: APIs & Services › Credentials › Create OAuth client ID › TVs and Limited Input devices. Paste its client ID, a space, then its client secret."
+needed = 0
 item = "youtube.client"
 value = '[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com[\s:]+[A-Za-z0-9_-]{16,128}'
 placeholder = "123-abc.apps.googleusercontent.com GOCSPX-…"
@@ -42,7 +43,7 @@ placeholder = "123-abc.apps.googleusercontent.com GOCSPX-…"
 [[credentials]]
 id = "account"
 title = "YouTube channel"
-help = "Sign in as the Google account that owns the channel (add the Google OAuth client first). Or paste a refresh token made with the same client."
+help = "Sign in as the Google account that owns the channel. Or paste a refresh token made with the same Google OAuth client."
 item = "youtube.{label}"
 value = '1//[A-Za-z0-9_-]{20,512}'
 placeholder = "1//0g…"
@@ -292,10 +293,10 @@ pattern = "^([a-z0-9][a-z0-9._-]*)?$"
 
 [[commands]]
 kind = "youtube.client"
-title = "Add the Google OAuth client"
+title = "Use your own Google OAuth client"
 slash = "client"
 form = "client"
-summary = "Add the Google OAuth client that YouTube sign-ins go through"
+summary = "Use your own Google OAuth client for YouTube sign-ins, instead of the one the extension comes with"
 
 # From ClientParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]

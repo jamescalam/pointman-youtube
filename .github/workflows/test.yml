@@ -15,3 +15,7 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       # against a fake YouTube on a local port: no real channel is called
       - run: cargo test
+      # again, built with a default client (the fake's), as a release is with its own
+      - run: cargo test
+        env:
+          YOUTUBE_DEFAULT_CLIENT: "123-fake.apps.googleusercontent.com GOCSPX-fakeclientsecret01"

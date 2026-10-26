@@ -34,7 +34,7 @@ machines it's installed on. The behaviour alone is also an ordinary skill: copy 
 | `youtube.upload {file, title, description, tags, category, privacy, publish_at?, made_for_kids?, thumbnail?, playlist?, confirm}` | A resumable upload, with progress; private unless said. Refused without `confirm: true` |
 | `youtube.update {video, title?, description?, tags?, category?, privacy?, publish_at?, made_for_kids?, confirm?}` | Changes only the fields given. A public video, or making one public or scheduling it, needs `confirm: true` |
 | `youtube.thumbnail {video, file, confirm?}` | Sets a JPEG or PNG thumbnail (at most 2 MB). A public video's needs `confirm: true` |
-| `/youtube client`, `/youtube add` | Open the forms for the OAuth client and a channel's sign-in in the app |
+| `/youtube add`, `/youtube client` | Open the forms for a channel's sign-in, and for your own OAuth client (optional), in the app |
 
 **Uploads resume.** A video goes up in chunks (`chunk_mib`, 8 MiB by default). After a dropped
 connection the extension asks YouTube how much it has and carries on from there. The upload session is
@@ -46,15 +46,27 @@ first, changes only the fields asked for, and sends back only the parts with a c
 
 ## Setting it up
 
-1. In [Google Cloud console](https://console.cloud.google.com/), in a project of yours: turn on the
-   **YouTube Data API v3**, set up the OAuth consent screen (External), and add yourself as a user.
-   Publish the app to production once it works. While it's in testing, Google's refresh tokens last
-   7 days, so the channel would need signing in again every week.
+In the Pointman app: `/youtube add` and tap **Sign in**. Enter the code at google.com/device, signed in
+as the Google account that owns the channel. The refresh token is sealed in the vault as
+`youtube.<label>`.
+
+The sign-in goes through the Google OAuth client the release is built with, so there's nothing to set
+up in Google Cloud, and its quota is shared by everyone using it. Google shows its "unverified app"
+screen before the consent screen until the app is verified.
+
+**Your own Google OAuth client (optional).** To use a Google Cloud project of your own and its quota:
+
+1. In [Google Cloud console](https://console.cloud.google.com/): turn on the **YouTube Data API v3**,
+   set up the OAuth consent screen (External), and add yourself as a user. Publish the app to
+   production once it works. While it's in testing, Google's refresh tokens last 7 days, so the
+   channel would need signing in again every week.
 2. **APIs & Services › Credentials › Create OAuth client ID › TVs and Limited Input devices.**
 3. In the Pointman app: `/youtube client`, and paste the client ID, a space, then the client secret.
-   It's sealed in the vault as `youtube.client`.
-4. `/youtube add` and tap **Sign in**. Enter the code at google.com/device, signed in as the Google
-   account that owns the channel. The refresh token is sealed in the vault as `youtube.<label>`.
+   It's sealed in the vault as `youtube.client`, and sign-ins go through it from then on. A channel
+   signed in through one client is signed in again (`/youtube add`) after a switch to another.
+
+**Building it.** A release is built with the repo's `YOUTUBE_DEFAULT_CLIENT` Actions secret (the client
+ID, a space, then its secret). A build without it has no default, and asks for `/youtube client`.
 
 Settings, per machine: `account` (which sign-in to use, by label; the first if empty) and `chunk_mib`.
 Uploads have their own daily quota ([videos.insert](https://developers.google.com/youtube/v3/docs/videos/insert));

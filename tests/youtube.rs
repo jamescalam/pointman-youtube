@@ -352,11 +352,51 @@ fn a_channel_signs_in_with_googles_device_flow() {
         .call("credentials.sign_in", json!({"form": "account", "label": "client", "session": {"value": "sgn_2"}}))
         .unwrap_err();
     assert!(e.message.contains("youtube.client"), "{e}");
+}
+
+/// A node with no `youtube.client` of its own signs in through the client the build came with (a release's
+/// YOUTUBE_DEFAULT_CLIENT); one with its own uses that instead. CI runs the tests both ways: built with the fake's
+/// client as the default, and with none, which asks for `/youtube client`.
+#[test]
+fn a_node_without_its_own_client_signs_in_with_the_one_it_was_built_with() {
+    let fake = Fake::start();
+    let dir = tempfile::tempdir().unwrap();
     let bare = node_with(&fake, dir.path(), json!({}), vec![]);
-    let e = bare
-        .call("credentials.sign_in", json!({"form": "account", "label": "main", "session": {"value": "sgn_3"}}))
-        .unwrap_err();
-    assert!(e.message.contains("/youtube client"), "{e}");
+    let start = |node: &StandIn, session: &str| {
+        node.call("credentials.sign_in", json!({"form": "account", "label": "main", "session": {"value": session}}))
+    };
+    let Some(default) = option_env!("YOUTUBE_DEFAULT_CLIENT") else {
+        let e = start(&bare, "sgn_1").unwrap_err();
+        assert!(e.message.contains("/youtube client"), "{e}");
+        let e = bare.run("youtube.videos", json!({})).unwrap_err();
+        assert!(e.message.contains("/youtube client") && e.message.contains("/youtube add"), "{e}");
+        return;
+    };
+    assert_eq!(default, format!("{CLIENT_ID} {CLIENT_SECRET}"), "the tests build with the fake's client");
+    let started = start(&bare, "sgn_1").unwrap();
+    assert_eq!(started["code"], USER_CODE);
+    let got = bare
+        .call_timeout(
+            "credentials.wait",
+            json!({"form": "account", "session": {"value": "sgn_1"}}),
+            Duration::from_secs(30),
+        )
+        .unwrap();
+    assert_eq!(got["value"], REFRESH);
+    // with nothing signed in, it asks only for the sign-in
+    let e = bare.run("youtube.videos", json!({})).unwrap_err();
+    assert!(e.message.contains("/youtube add") && !e.message.contains("/youtube client"), "{e}");
+    // signed in, with the default's token refreshed through it
+    let node = node_with(&fake, dir.path(), json!({}), vec![("youtube.main", REFRESH.to_string())]);
+    node.run("youtube.videos", json!({})).unwrap();
+
+    // a node's own client wins: Google (the fake) refuses this one, so it's the one that was sent
+    let own = vec![("youtube.client", "999-other.apps.googleusercontent.com GOCSPX-otherclientsecret1".to_string())];
+    let e = start(&node_with(&fake, dir.path(), json!({}), own), "sgn_2").unwrap_err();
+    assert!(e.message.contains("Google refused the OAuth client"), "{e}");
+
+    let said = format!("{}\n{}", bare.log(), node.log());
+    assert!(!said.contains(CLIENT_SECRET), "the default's secret is in a log");
 }
 
 #[test]
