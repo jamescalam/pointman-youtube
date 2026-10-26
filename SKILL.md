@@ -53,6 +53,9 @@ every number and link checked against its source, and one paste-ready `publish/d
   pick the time.
 - `description` and `tags` replace the whole field: read it with `youtube.video`, edit, send it all.
 - The upload's `thumbnail` is a path on that machine. For a board file, run `youtube.thumbnail` after.
+- **What the API can't set: a Short's Related video** (the longer video a Short links to). YouTube's Data
+  API has no field for it, so only Studio or the YouTube app can set it. Say so before uploading Shorts, and
+  as each one is uploaded or scheduled, post its link (https://youtu.be/<id>) for the owner to set it.
 - Not signed in? Ask the owner to run `/youtube add` in the app (and `/youtube client` only to use their own Google Cloud project). Never
   ask for, paste or post a token. Uploads have a daily quota: don't retry a failed one in a loop.
 

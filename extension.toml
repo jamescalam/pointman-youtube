@@ -9,7 +9,7 @@
 [extension]
 id = "youtube"
 name = "YouTube"
-version = "0.3.1"
+version = "0.3.2"
 publisher = "jamescalam"
 summary = "Upload videos and edit their titles, descriptions, tags and thumbnails on a YouTube channel, with research and packaging the channel's owner picks."
 node = ">=0.3,<1"
