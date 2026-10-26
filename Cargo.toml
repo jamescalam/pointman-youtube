@@ -1,0 +1,32 @@
+[package]
+name = "youtube"
+version = "0.3.0"
+edition = "2021"
+description = "YouTube on Pointman: upload videos and edit their details on a channel, through the YouTube Data API v3."
+license = "MIT"
+repository = "https://github.com/jamescalam/pointman-youtube"
+publish = false
+
+[dependencies]
+anyhow = "1"
+# buffa's code for proto/youtube/v1/youtube.proto (build.rs) uses these: keep them at the SDK's versions
+buffa = { version = "0.9.2", features = ["json"] }
+buffa-types = { version = "0.9.2", features = ["json"] }
+pointman-extension = { git = "https://github.com/pointman-ai/pointman-extension", tag = "v0.4.0" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+ureq = { version = "2", features = ["json"] }
+
+[build-dependencies]
+pointman-extension = { git = "https://github.com/pointman-ai/pointman-extension", tag = "v0.4.0", features = ["proto"] }
+
+[dev-dependencies]
+pointman-extension = { git = "https://github.com/pointman-ai/pointman-extension", tag = "v0.4.0", features = ["proto"] }
+tempfile = "3"
+toml = "0.8"
+
+[profile.release]
+strip = true
+lto = true
