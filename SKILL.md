@@ -53,7 +53,7 @@ every number and link checked against its source, and one paste-ready `publish/d
   pick the time.
 - `description` and `tags` replace the whole field: read it with `youtube.video`, edit, send it all.
 - The upload's `thumbnail` is a path on that machine. For a board file, run `youtube.thumbnail` after.
-- Not signed in? Ask the owner to run `/youtube client` (once) and `/youtube add` in the app. Never
+- Not signed in? Ask the owner to run `/youtube add` in the app (and `/youtube client` only to use their own Google Cloud project). Never
   ask for, paste or post a token. Uploads have a daily quota: don't retry a failed one in a loop.
 
 **Stop and ask** before using a face, logo or footage the channel doesn't own.

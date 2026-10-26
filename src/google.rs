@@ -47,6 +47,16 @@ impl std::fmt::Debug for OAuthClient {
     }
 }
 
+/// The client a release is built with (the repo's YOUTUBE_DEFAULT_CLIENT secret, written as the vault's value is): the
+/// sign-ins go through it when a node has no `youtube.client` of its own. Google doesn't expect a device client to keep
+/// its secret, so it's in the binary; it's never in a log or an answer.
+const DEFAULT_CLIENT: Option<&str> = option_env!("YOUTUBE_DEFAULT_CLIENT");
+
+/// The client this build comes with, if it was built with one.
+pub fn default_client() -> Option<OAuthClient> {
+    DEFAULT_CLIENT.and_then(OAuthClient::parse)
+}
+
 impl OAuthClient {
     /// The vault item's value: the client id, then its secret (a space or a colon between).
     pub fn parse(value: &str) -> Option<Self> {
