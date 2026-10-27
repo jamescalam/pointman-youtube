@@ -326,7 +326,7 @@ fn a_channel_signs_in_with_googles_device_flow() {
     let started = node
         .call(
             "credentials.sign_in",
-            json!({"form": "account", "label": "main", "person": {"handle": "james"}, "session": {"value": "sgn_1"}}),
+            json!({"form": "account", "label": "main", "person": {"name": "james"}, "session": {"id": "sgn_1"}}),
         )
         .unwrap();
     assert_eq!(started["url"], "https://www.google.com/device");
@@ -336,7 +336,7 @@ fn a_channel_signs_in_with_googles_device_flow() {
     let got = node
         .call_timeout(
             "credentials.wait",
-            json!({"form": "account", "session": {"value": "sgn_1"}}),
+            json!({"form": "account", "session": {"id": "sgn_1"}}),
             Duration::from_secs(30),
         )
         .unwrap();
@@ -344,12 +344,12 @@ fn a_channel_signs_in_with_googles_device_flow() {
     let polls = fake.requests().iter().filter(|r| r.path == "/token").count();
     assert_eq!(polls, 2, "it waited while Google said authorization_pending");
     // the session is over: waiting again says so
-    let e = node.call("credentials.wait", json!({"form": "account", "session": {"value": "sgn_1"}})).unwrap_err();
+    let e = node.call("credentials.wait", json!({"form": "account", "session": {"id": "sgn_1"}})).unwrap_err();
     assert!(e.message.contains("ended"), "{e}");
 
     // the client's own name isn't a channel's, and with no client there's nothing to sign in with
     let e = node
-        .call("credentials.sign_in", json!({"form": "account", "label": "client", "session": {"value": "sgn_2"}}))
+        .call("credentials.sign_in", json!({"form": "account", "label": "client", "session": {"id": "sgn_2"}}))
         .unwrap_err();
     assert!(e.message.contains("youtube.client"), "{e}");
 }
@@ -363,7 +363,7 @@ fn a_node_without_its_own_client_signs_in_with_the_one_it_was_built_with() {
     let dir = tempfile::tempdir().unwrap();
     let bare = node_with(&fake, dir.path(), json!({}), vec![]);
     let start = |node: &StandIn, session: &str| {
-        node.call("credentials.sign_in", json!({"form": "account", "label": "main", "session": {"value": session}}))
+        node.call("credentials.sign_in", json!({"form": "account", "label": "main", "session": {"id": session}}))
     };
     let Some(default) = option_env!("YOUTUBE_DEFAULT_CLIENT") else {
         let e = start(&bare, "sgn_1").unwrap_err();
@@ -378,7 +378,7 @@ fn a_node_without_its_own_client_signs_in_with_the_one_it_was_built_with() {
     let got = bare
         .call_timeout(
             "credentials.wait",
-            json!({"form": "account", "session": {"value": "sgn_1"}}),
+            json!({"form": "account", "session": {"id": "sgn_1"}}),
             Duration::from_secs(30),
         )
         .unwrap();

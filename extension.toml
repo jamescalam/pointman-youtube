@@ -9,10 +9,10 @@
 [extension]
 id = "youtube"
 name = "YouTube"
-version = "0.3.2"
+version = "0.4.0"
 publisher = "jamescalam"
 summary = "Upload videos and edit their titles, descriptions, tags and thumbnails on a YouTube channel, with research and packaging the channel's owner picks."
-node = ">=0.3,<1"
+node = ">=0.4,<1"
 platforms = ["macos-arm64", "macos-x86_64", "linux-x86_64", "linux-arm64"]
 
 [run]
