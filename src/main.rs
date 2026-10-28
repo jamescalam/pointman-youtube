@@ -400,18 +400,18 @@ fn main() -> anyhow::Result<()> {
         if p.label.trim() == CLIENT_ITEM.trim_start_matches("youtube.") {
             bail!("{CLIENT_ITEM} is the OAuth client's place in the vault: call the channel something else");
         }
-        let session = p.session.as_option().map(|s| s.value.as_str()).unwrap_or_default();
+        let session = p.session.as_option().map(|s| s.id.as_str()).unwrap_or_default();
         s.start(&xx.agent, &xx.ends, xx.client()?, session)
     });
     let (xx, s) = (x.clone(), signins.clone());
     ext.on(move |p: CredentialsWaitRequest| {
-        let session = p.session.as_option().map(|s| s.value.as_str()).unwrap_or_default();
+        let session = p.session.as_option().map(|s| s.id.as_str()).unwrap_or_default();
         let value = s.wait(&xx.agent, &xx.ends, session, signin::WAIT)?;
         Ok(CredentialsWaitResponse { value, ..Default::default() })
     });
     let (xx, s) = (x.clone(), signins);
     ext.on(move |p: CredentialsCodeRequest| {
-        let session = p.session.as_option().map(|s| s.value.as_str()).unwrap_or_default();
+        let session = p.session.as_option().map(|s| s.id.as_str()).unwrap_or_default();
         let value = s.code(&xx.agent, &xx.ends, session, &p.code, Duration::from_secs(150))?;
         Ok(CredentialsCodeResponse { value, ..Default::default() })
     });
