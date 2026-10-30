@@ -1,6 +1,6 @@
 [package]
 name = "youtube"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "YouTube on Pointman: upload videos and edit their details on a channel, through the YouTube Data API v3."
 license = "MIT"

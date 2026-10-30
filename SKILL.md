@@ -46,6 +46,7 @@ every number and link checked against its source, and one paste-ready `publish/d
 | Change its details: only the fields given change | `youtube.update {video, title?, description?, tags?, category?, privacy?, publish_at?, made_for_kids?, confirm?}` |
 | Its thumbnail (JPEG or PNG, at most 2 MB) | `youtube.thumbnail {video, file, confirm?}` |
 
+- **Several channels signed in?** Name one with `account` (the label after `youtube.`, e.g. `spacesheep`) on every command. Without it, and with no `account` setting, a call stops and lists them. Check the channel before an upload: `youtube.videos {account}` shows whose it is.
 - **Ask the owner first, every time.** Before an upload, or any change to a public video (making one
   public or scheduling it counts), post exactly what will go up or change as a decision. Pass
   `confirm: true` only after their yes, for what they said yes to. Never set it on your own.

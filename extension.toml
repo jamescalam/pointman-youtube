@@ -9,7 +9,7 @@
 [extension]
 id = "youtube"
 name = "YouTube"
-version = "0.4.0"
+version = "0.4.1"
 publisher = "jamescalam"
 summary = "Upload videos and edit their titles, descriptions, tags and thumbnails on a YouTube channel, with research and packaging the channel's owner picks."
 node = ">=0.4,<1"
@@ -52,12 +52,12 @@ sign_in = true
 # From Settings in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [settings]
 type = "object"
-additionalProperties = false
 description = "The extension's settings, per machine."
+additionalProperties = false
 
 [settings.properties.account]
 type = "string"
-description = "The label of the YouTube sign-in to use (main, for the vault's youtube.main). Empty: the first, by label."
+description = "The label of the YouTube sign-in to use (main, for the vault's youtube.main). Empty: the only one signed in; with several, each call names one with account."
 maxLength = 32
 pattern = "^([a-z0-9][a-z0-9._-]*)?$"
 
@@ -77,8 +77,8 @@ summary = "The channel's videos: id, title, privacy, publish time and views, new
 # From VideosParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
 description = "youtube.videos: the channel's videos, newest first."
+additionalProperties = false
 
 [commands.params.properties.page_size]
 type = "integer"
@@ -92,6 +92,12 @@ type = "string"
 description = "The next page: an earlier answer's next_page. Empty: the newest."
 maxLength = 200
 
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
 [[commands]]
 kind = "youtube.video"
 title = "One video's details (video)"
@@ -101,14 +107,20 @@ summary = "A video's title, description, tags, category, privacy and schedule, a
 # From VideoParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
 description = "youtube.video: one video's details, as youtube.update would change them."
 required = ["video"]
+additionalProperties = false
 
 [commands.params.properties.video]
 type = "string"
 description = "The video's id: the 11 characters after watch?v= or youtu.be/."
 pattern = "^[A-Za-z0-9_-]{11}$"
+
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
 
 [[commands]]
 kind = "youtube.upload"
@@ -122,9 +134,9 @@ summary = "Upload a video to the channel, private unless said; needs confirm=tru
 # From UploadParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
 description = "youtube.upload: a new video on the channel, private unless it says otherwise."
 required = ["file", "title"]
+additionalProperties = false
 
 [commands.params.properties.file]
 type = "string"
@@ -185,6 +197,12 @@ pattern = "^([A-Za-z0-9_-]+)?$"
 type = "boolean"
 description = "True once the channel's owner has said yes to this upload. Without it, nothing is uploaded."
 
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
 [[commands]]
 kind = "youtube.update"
 title = "Change a video's details (video, title?, …, confirm?)"
@@ -194,9 +212,9 @@ summary = "Change a video's title, description, tags, category, privacy or sched
 # From UpdateParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
 description = "youtube.update: change a video's details. Only the fields given change; the rest stay as they are."
 required = ["video"]
+additionalProperties = false
 
 [commands.params.properties.video]
 type = "string"
@@ -245,6 +263,12 @@ description = "Whether it's made for kids."
 type = "boolean"
 description = "True once the channel's owner has said yes. Needed to change a public video, make one public or schedule it."
 
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
 [[commands]]
 kind = "youtube.thumbnail"
 title = "Set a video's thumbnail (video, file, confirm?)"
@@ -254,9 +278,9 @@ summary = "Set a video's thumbnail from a JPEG or PNG; a public video's needs co
 # From ThumbnailParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
 description = "youtube.thumbnail: a video's thumbnail."
 required = ["video", "file"]
+additionalProperties = false
 
 [commands.params.properties.video]
 type = "string"
@@ -272,6 +296,12 @@ minLength = 1
 type = "boolean"
 description = "True once the channel's owner has said yes. Needed for a public video's."
 
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
 [[commands]]
 kind = "youtube.add"
 title = "Add a YouTube channel"
@@ -282,8 +312,8 @@ summary = "Sign a YouTube channel in for this machine's uploads and edits"
 # From AddParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
 description = "youtube.add: a YouTube sign-in, added in the apps."
+additionalProperties = false
 
 [commands.params.properties.name]
 type = "string"
@@ -301,5 +331,5 @@ summary = "Use your own Google OAuth client for YouTube sign-ins, instead of the
 # From ClientParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
 [commands.params]
 type = "object"
-additionalProperties = false
 description = "youtube.client: the Google OAuth client the sign-ins use, added in the apps."
+additionalProperties = false
