@@ -25,6 +25,7 @@ use youtube::v1::{
 use youtube::{channel, upload, words, CLIENT_ITEM};
 
 struct Cached {
+    name: String,
     token: String,
     until: Instant,
 }
@@ -41,31 +42,46 @@ impl Ext {
         self.h.machine()
     }
 
-    /// The vault item of the channel's sign-in to use: the setting's, else the first by label.
-    fn account(&self) -> anyhow::Result<String> {
-        let channels: Vec<String> = self.h.secrets("youtube.")?.into_iter().filter(|n| n != CLIENT_ITEM).collect();
-        let want = self.h.typed_settings::<Settings>()?.account.trim().to_string();
+    /// The vault item of the channel's sign-in to use: the call's `account`, else the setting's, else the only one.
+    /// With several signed in and none named it stops and lists them, rather than take one by chance.
+    fn account(&self, asked: &str) -> anyhow::Result<String> {
+        let mut channels: Vec<String> = self.h.secrets("youtube.")?.into_iter().filter(|n| n != CLIENT_ITEM).collect();
+        channels.sort();
+        let have = if channels.is_empty() { "none".to_string() } else { channels.join(", ") };
+        let asked = asked.trim();
+        let (want, from) = if asked.is_empty() {
+            (self.h.typed_settings::<Settings>()?.account.trim().to_string(), "the account setting")
+        } else {
+            (asked.to_string(), "account")
+        };
         if !want.is_empty() {
             let name = format!("youtube.{want}");
             if channels.contains(&name) {
                 return Ok(name);
             }
-            let have = if channels.is_empty() { "none".to_string() } else { channels.join(", ") };
             bail!(
-                "no YouTube sign-in {name} on {} (the account setting); it has {have}: sign it in with /youtube add",
+                "no YouTube sign-in {name} on {} ({from}); it has {have}: pass account=<label> of one of them, or sign it in with /youtube add",
                 self.machine()
             );
         }
-        channels.into_iter().min().ok_or_else(|| {
-            let client = match google::default_client() {
-                Some(_) => "",
-                None => "add the Google OAuth client (/youtube client) if it isn't there, then ",
-            };
-            anyhow!(
-                "no YouTube channel is signed in on {}: {client}type /youtube add in the app and tap Sign in",
+        match channels.len() {
+            1 => Ok(channels.remove(0)),
+            0 => {
+                let client = match google::default_client() {
+                    Some(_) => "",
+                    None => "add the Google OAuth client (/youtube client) if it isn't there, then ",
+                };
+                bail!(
+                    "no YouTube channel is signed in on {}: {client}type /youtube add in the app and tap Sign in",
+                    self.machine()
+                )
+            }
+            _ => bail!(
+                "{} YouTube channels are signed in on {} ({have}) and none is chosen: pass account=<label> (the part after youtube.) with this command, or set the account setting",
+                channels.len(),
                 self.machine()
-            )
-        })
+            ),
+        }
     }
 
     /// The node's own `youtube.client` when it has one, else the one the release was built with.
@@ -87,12 +103,14 @@ impl Ext {
     }
 
     /// An access token for the channel, made again when it's within a minute of running out, or `fresh`.
-    fn token(&self, fresh: bool) -> anyhow::Result<String> {
+    fn token(&self, asked: &str, fresh: bool) -> anyhow::Result<String> {
+        let name = self.account(asked)?;
         let mut cached = self.cached.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(c) = cached.as_ref().filter(|c| !fresh && c.until > Instant::now() + Duration::from_secs(60)) {
+        if let Some(c) =
+            cached.as_ref().filter(|c| c.name == name && !fresh && c.until > Instant::now() + Duration::from_secs(60))
+        {
             return Ok(c.token.clone());
         }
-        let name = self.account()?;
         let value = self.h.secret(&name)?;
         let refresh = Regex::new(r"1//[A-Za-z0-9_-]+")
             .expect("compiles")
@@ -102,12 +120,12 @@ impl Ext {
                 anyhow!("{name} isn't a Google refresh token: sign the channel in again with /youtube add")
             })?;
         let (token, lasts) = google::access_token(&self.agent, &self.ends, &self.client()?, &refresh)?;
-        *cached = Some(Cached { token: token.clone(), until: Instant::now() + lasts });
+        *cached = Some(Cached { name, token: token.clone(), until: Instant::now() + lasts });
         Ok(token)
     }
 
-    fn api<T>(&self, f: impl FnOnce(&Api) -> anyhow::Result<T>) -> anyhow::Result<T> {
-        let token = |fresh: bool| self.token(fresh);
+    fn api<T>(&self, account: &str, f: impl FnOnce(&Api) -> anyhow::Result<T>) -> anyhow::Result<T> {
+        let token = |fresh: bool| self.token(account, fresh);
         f(&Api { agent: &self.agent, ends: &self.ends, token: &token })
     }
 
@@ -134,7 +152,7 @@ fn name_of(p: &std::path::Path) -> String {
 }
 
 fn videos(x: &Ext, _: &Job, p: VideosParams) -> anyhow::Result<VideosResult> {
-    let (videos, next, total) = x.api(|api| channel::videos(api, p.page_size, &p.page))?;
+    let (videos, next, total) = x.api(&p.account, |api| channel::videos(api, p.page_size, &p.page))?;
     let mut text = if videos.is_empty() {
         "No videos on the channel.".to_string()
     } else {
@@ -157,7 +175,7 @@ fn videos(x: &Ext, _: &Job, p: VideosParams) -> anyhow::Result<VideosResult> {
 
 fn video(x: &Ext, _: &Job, p: VideoParams) -> anyhow::Result<VideoResult> {
     check_video(&p.video)?;
-    let v = x.api(|api| channel::fetch(api, &p.video, "snippet,status,statistics,contentDetails"))?;
+    let v = x.api(&p.account, |api| channel::fetch(api, &p.video, "snippet,status,statistics,contentDetails"))?;
     let (s, st) = (&v["snippet"], &v["status"]);
     let text = |k: &str| s[k].as_str().unwrap_or_default().to_string();
     let mut out = VideoResult {
@@ -230,7 +248,7 @@ fn upload_video(x: &Ext, job: &Job, p: UploadParams) -> anyhow::Result<UploadRes
     let size = std::fs::metadata(&path)?.len();
     let started = Instant::now();
 
-    let made = x.api(|api| upload::video(job, api, &path, &details, chunk, resume))?;
+    let made = x.api(&p.account, |api| upload::video(job, api, &path, &details, chunk, resume))?;
     let id = made["id"]
         .as_str()
         .filter(|i| !i.is_empty())
@@ -252,7 +270,7 @@ fn upload_video(x: &Ext, job: &Job, p: UploadParams) -> anyhow::Result<UploadRes
     let mut thumbnail = false;
     if let Some((bytes, kind)) = thumb {
         job.progress(1.0, "setting the thumbnail");
-        match x.api(|api| upload::thumbnail(api, &id, &bytes, kind)) {
+        match x.api(&p.account, |api| upload::thumbnail(api, &id, &bytes, kind)) {
             Ok(()) => {
                 thumbnail = true;
                 text.push_str(" Thumbnail set.");
@@ -263,7 +281,7 @@ fn upload_video(x: &Ext, job: &Job, p: UploadParams) -> anyhow::Result<UploadRes
     let mut playlist = String::new();
     if !p.playlist.is_empty() {
         job.progress(1.0, "adding it to the playlist");
-        match x.api(|api| channel::add_to_playlist(api, &p.playlist, &id)) {
+        match x.api(&p.account, |api| channel::add_to_playlist(api, &p.playlist, &id)) {
             Ok(()) => {
                 playlist = p.playlist.clone();
                 text.push_str(&format!(" Added to playlist {}.", p.playlist));
@@ -287,7 +305,7 @@ fn upload_video(x: &Ext, job: &Job, p: UploadParams) -> anyhow::Result<UploadRes
 
 fn update(x: &Ext, _: &Job, p: UpdateParams) -> anyhow::Result<UpdateResult> {
     p.check()?;
-    let now = x.api(|api| channel::fetch(api, &p.video, "snippet,status"))?;
+    let now = x.api(&p.account, |api| channel::fetch(api, &p.video, "snippet,status"))?;
     let title = now["snippet"]["title"].as_str().unwrap_or_default().to_string();
     let change = channel::merge(&now, &p)?;
     let answer = |text: String, title: String, privacy: Option<Privacy>| UpdateResult {
@@ -317,7 +335,7 @@ fn update(x: &Ext, _: &Job, p: UpdateParams) -> anyhow::Result<UpdateResult> {
             channel::url(&p.video)
         );
     }
-    let after = x.api(|api| channel::update(api, &change))?;
+    let after = x.api(&p.account, |api| channel::update(api, &change))?;
     let title = after["snippet"]["title"].as_str().map(String::from).unwrap_or(title);
     let privacy = channel::privacy(&after).or(change.becomes);
     let text = format!(
@@ -332,7 +350,7 @@ fn thumbnail(x: &Ext, _: &Job, p: ThumbnailParams) -> anyhow::Result<ThumbnailRe
     check_video(&p.video)?;
     let path = x.file(&p.file, "file")?;
     let (bytes, kind) = upload::thumbnail_file(&path)?;
-    x.api(|api| {
+    x.api(&p.account, |api| {
         let now = channel::fetch(api, &p.video, "snippet,status")?;
         let title = now["snippet"]["title"].as_str().unwrap_or_default().to_string();
         if channel::privacy(&now) == Some(Privacy::PRIVACY_PUBLIC) && !p.confirm {

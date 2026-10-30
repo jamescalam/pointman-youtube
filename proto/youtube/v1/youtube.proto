@@ -12,7 +12,7 @@ import "pointman/v1/options.proto";
 
 // The extension's settings, per machine.
 message Settings {
-  // The label of the YouTube sign-in to use (main, for the vault's youtube.main). Empty: the first, by label.
+  // The label of the YouTube sign-in to use (main, for the vault's youtube.main). Empty: the only one signed in; with several, each call names one with account.
   string account = 1 [(buf.validate.field).string = {max_len: 32, pattern: "^([a-z0-9][a-z0-9._-]*)?$"}, (pointman.v1.setting).default = ""];
   // How much of a video each upload request sends, in MiB (default 8). A dropped connection resends at most one.
   int32 chunk_mib = 2 [(buf.validate.field).int32 = {gte: 1, lte: 256}, (pointman.v1.setting).default = "8"];
@@ -55,6 +55,9 @@ message VideosParams {
   int32 page_size = 1 [(buf.validate.field).int32 = {gte: 1, lte: 50}, (pointman.v1.setting).default = "20"];
   // The next page: an earlier answer's next_page. Empty: the newest.
   string page = 2 [(buf.validate.field).string.max_len = 200];
+
+  // The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting.
+  string account = 3 [(buf.validate.field).string = {max_len: 32, pattern: "^([a-z0-9][a-z0-9._-]*)?$"}];
 }
 
 message VideosResult {
@@ -83,6 +86,9 @@ message Video {
 message VideoParams {
   // The video's id: the 11 characters after watch?v= or youtu.be/.
   string video = 1 [(buf.validate.field).required = true, (buf.validate.field).string.pattern = "^[A-Za-z0-9_-]{11}$"];
+
+  // The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting.
+  string account = 2 [(buf.validate.field).string = {max_len: 32, pattern: "^([a-z0-9][a-z0-9._-]*)?$"}];
 }
 
 message VideoResult {
@@ -128,6 +134,9 @@ message UploadParams {
   string playlist = 10 [(buf.validate.field).string = {max_len: 64, pattern: "^([A-Za-z0-9_-]+)?$"}];
   // True once the channel's owner has said yes to this upload. Without it, nothing is uploaded.
   bool confirm = 11;
+
+  // The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting.
+  string account = 12 [(buf.validate.field).string = {max_len: 32, pattern: "^([a-z0-9][a-z0-9._-]*)?$"}];
 }
 
 message UploadResult {
@@ -163,6 +172,9 @@ message UpdateParams {
   optional bool made_for_kids = 8;
   // True once the channel's owner has said yes. Needed to change a public video, make one public or schedule it.
   bool confirm = 9;
+
+  // The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting.
+  string account = 10 [(buf.validate.field).string = {max_len: 32, pattern: "^([a-z0-9][a-z0-9._-]*)?$"}];
 }
 
 message UpdateResult {
@@ -183,6 +195,9 @@ message ThumbnailParams {
   string file = 2 [(buf.validate.field).required = true, (buf.validate.field).string.min_len = 1];
   // True once the channel's owner has said yes. Needed for a public video's.
   bool confirm = 3;
+
+  // The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting.
+  string account = 4 [(buf.validate.field).string = {max_len: 32, pattern: "^([a-z0-9][a-z0-9._-]*)?$"}];
 }
 
 message ThumbnailResult {

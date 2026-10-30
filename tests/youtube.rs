@@ -454,3 +454,25 @@ fn files_come_from_the_folders_the_node_allows() {
     assert!(e.message.contains("at most 2 MB"), "{e}");
     assert!(fake.api_requests().is_empty());
 }
+
+#[test]
+fn with_several_channels_signed_in_a_call_names_one_or_stops() {
+    let fake = Fake::start();
+    let dir = tempfile::tempdir().unwrap();
+    fake.add_video("video000001", "Video 1", "public", 1000);
+    let mut secrets = signed_in();
+    secrets.push(("youtube.spacesheep", REFRESH.to_string()));
+    let node = node_with(&fake, dir.path(), json!({"chunk_mib": 1}), secrets);
+
+    let err = node.run("youtube.videos", json!({})).unwrap_err().to_string();
+    assert!(err.contains("youtube.main, youtube.spacesheep") && err.contains("account=<label>"), "{err}");
+
+    let ok = node.run("youtube.videos", json!({"account": "spacesheep"})).unwrap().result;
+    assert_eq!(ok["total"], 1);
+
+    let err = node.run("youtube.videos", json!({"account": "nope"})).unwrap_err().to_string();
+    assert!(
+        err.contains("no YouTube sign-in youtube.nope") && err.contains("youtube.main, youtube.spacesheep"),
+        "{err}"
+    );
+}
