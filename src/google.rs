@@ -160,13 +160,13 @@ pub fn json(r: ureq::Response) -> Result<Value, Failure> {
     })
 }
 
-/// An access token for a refresh token: the token and how long it lasts.
+/// An access token for a refresh token: the token, how long it lasts, and the scopes it has (space-separated).
 pub fn access_token(
     agent: &ureq::Agent,
     ends: &Endpoints,
     client: &OAuthClient,
     refresh: &str,
-) -> anyhow::Result<(String, Duration)> {
+) -> anyhow::Result<(String, Duration, String)> {
     let got = send(agent.post(&format!("{}/token", ends.oauth)).send_form(&[
         ("client_id", client.id.as_str()),
         ("client_secret", client.secret.as_str()),
@@ -191,7 +191,8 @@ pub fn access_token(
     };
     let token =
         v["access_token"].as_str().filter(|t| !t.is_empty()).ok_or_else(|| anyhow!("Google gave no access token"))?;
-    Ok((token.to_string(), Duration::from_secs(v["expires_in"].as_u64().unwrap_or(3600))))
+    let scopes = v["scope"].as_str().unwrap_or_default().to_string();
+    Ok((token.to_string(), Duration::from_secs(v["expires_in"].as_u64().unwrap_or(3600)), scopes))
 }
 
 /// Calls to the Data API with a token from `token` (true: make a new one, the last was refused), tried once more with a
@@ -234,6 +235,19 @@ impl Api<'_> {
             send(req.call())
         })?;
         Ok(json(r)?)
+    }
+
+    /// A DELETE, whose answer has no body (204).
+    pub fn delete(&self, path: &str, query: &[(&str, &str)]) -> anyhow::Result<()> {
+        let url = self.url(path);
+        self.call(|auth| {
+            let mut req = self.agent.delete(&url).set("Authorization", auth);
+            for (k, v) in query {
+                req = req.query(k, v);
+            }
+            send(req.call())
+        })?;
+        Ok(())
     }
 
     pub fn send_json(&self, method: &str, path: &str, query: &[(&str, &str)], body: &Value) -> anyhow::Result<Value> {

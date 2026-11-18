@@ -9,7 +9,7 @@
 [extension]
 id = "youtube"
 name = "YouTube"
-version = "0.4.1"
+version = "0.5.0-rc.1"
 publisher = "jamescalam"
 summary = "Upload videos and edit their titles, descriptions, tags and thumbnails on a YouTube channel, with research and packaging the channel's owner picks."
 node = ">=0.4,<1"
@@ -27,6 +27,7 @@ files = ["references", "scripts"]
 [permissions]
 network = true                   # YouTube's Data API and Google's OAuth endpoints
 secrets = ["youtube.*"]          # youtube.client (the OAuth client) and youtube.<label> (each channel's sign-in)
+post = true                      # youtube.chat_watch's batches and youtube.chat_remove's log, in the thread they name
 
 # Your own Google OAuth client, if you'd rather the sign-ins went through it than through the one the extension comes
 # with: a "TVs and Limited Input devices" client in a Google Cloud project with the YouTube Data API v3 turned on.
@@ -295,6 +296,240 @@ minLength = 1
 [commands.params.properties.confirm]
 type = "boolean"
 description = "True once the channel's owner has said yes. Needed for a public video's."
+
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
+[[commands]]
+kind = "youtube.live"
+title = "The channel's live and upcoming broadcasts"
+slash = "live"
+summary = "The channel's live and upcoming broadcasts with their chat ids, and whether the sign-in may moderate chat"
+
+# From LiveParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
+[commands.params]
+type = "object"
+description = "youtube.live: the channel's live and upcoming broadcasts, each with its chat, and whether the sign-in may moderate."
+additionalProperties = false
+
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
+[[commands]]
+kind = "youtube.chat"
+title = "Read a live chat (video or chat_id, page_token?)"
+slash = "chat"
+summary = "A page of a live video's chat messages, oldest first, with the page_token and wait for the next"
+
+# From ChatParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
+[commands.params]
+type = "object"
+description = "youtube.chat: a page of a live video's chat messages, oldest first, and when to ask for the next."
+additionalProperties = false
+
+[commands.params.properties.video]
+type = "string"
+description = "The live video's id: the 11 characters after watch?v= or youtu.be/. Any public live video's chat can be read. Or give chat_id."
+pattern = "^([A-Za-z0-9_-]{11})?$"
+
+[commands.params.properties.chat_id]
+type = "string"
+description = "The live chat's id (youtube.live's chat_id), instead of video."
+maxLength = 200
+pattern = '^\S*$'
+
+[commands.params.properties.page_token]
+type = "string"
+description = "The next page: an earlier answer's page_token, for only the messages since. Empty: the latest messages."
+maxLength = 400
+pattern = '^\S*$'
+
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
+[[commands]]
+kind = "youtube.chat_watch"
+title = "Post a live chat to a thread (video, thread, …)"
+cancellable = true
+slash = "chat-watch"
+summary = "Post a live video's new chat messages to a thread in batches until cancelled or the chat ends"
+
+# From ChatWatchParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
+[commands.params]
+type = "object"
+description = "youtube.chat_watch: a live video's new chat messages posted to a thread in batches, until it's cancelled, the chat ends or minutes have gone by."
+required = ["video", "thread"]
+additionalProperties = false
+
+[commands.params.properties.video]
+type = "string"
+description = "The live video's id: the 11 characters after watch?v= or youtu.be/."
+pattern = "^[A-Za-z0-9_-]{11}$"
+
+[commands.params.properties.thread]
+type = "string"
+description = "The thread each batch is posted in (thr_123)."
+pattern = "^(thr_)?[1-9][0-9]*$"
+
+[commands.params.properties.every_seconds]
+type = "integer"
+description = "How often it posts the messages since the last batch, in seconds (default 15; never sooner than YouTube asks)."
+default = 15
+minimum = 5
+maximum = 300
+
+[commands.params.properties.mention]
+type = "string"
+description = "Who a batch @mentions (an agent's handle), so it wakes for each one. Empty: nobody."
+maxLength = 65
+pattern = "^(@?[a-z0-9][a-z0-9_-]{0,63})?$"
+
+[commands.params.properties.minutes]
+type = "integer"
+description = "How long it watches at most, in minutes (default 180)."
+default = 180
+minimum = 1
+maximum = 720
+
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
+[[commands]]
+kind = "youtube.chat_send"
+title = "Send a live chat message (video, text, confirm)"
+slash = "chat-send"
+summary = "Send a message in a live chat as the channel; needs confirm=true, given once the owner said yes"
+
+# From ChatSendParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
+[commands.params]
+type = "object"
+description = "youtube.chat_send: a message in a live video's chat, as the channel."
+required = ["video", "text"]
+additionalProperties = false
+
+[commands.params.properties.video]
+type = "string"
+description = "The live video's id: the 11 characters after watch?v= or youtu.be/."
+pattern = "^[A-Za-z0-9_-]{11}$"
+
+[commands.params.properties.text]
+type = "string"
+description = "What it says: at most 200 characters."
+minLength = 1
+maxLength = 200
+
+[commands.params.properties.confirm]
+type = "boolean"
+description = "True once the channel's owner has said yes to sending these words. Without it, nothing is sent."
+
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
+[[commands]]
+kind = "youtube.chat_remove"
+title = "Remove a live chat message (message_id, …, confirm)"
+slash = "chat-remove"
+summary = "Delete a message from a live chat the channel moderates and log it in a thread; needs confirm=true"
+
+# From ChatRemoveParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
+[commands.params]
+type = "object"
+description = "youtube.chat_remove: delete a message from a live chat the channel owns or moderates, and log it in a thread."
+required = ["message_id", "reason", "thread"]
+additionalProperties = false
+
+[commands.params.properties.video]
+type = "string"
+description = "The live video's id, whose chat has the message. Or give chat_id."
+pattern = "^([A-Za-z0-9_-]{11})?$"
+
+[commands.params.properties.chat_id]
+type = "string"
+description = "The live chat's id, instead of video."
+maxLength = 200
+pattern = '^\S*$'
+
+[commands.params.properties.message_id]
+type = "string"
+description = "The message's id (youtube.chat's id). It must be among the chat's latest 2,000 messages."
+minLength = 1
+maxLength = 200
+pattern = '^\S+$'
+
+[commands.params.properties.reason]
+type = "string"
+description = "Why it's removed, for the log (spam, a scam link…)."
+minLength = 1
+maxLength = 200
+
+[commands.params.properties.thread]
+type = "string"
+description = "The thread where the deletion is logged (thr_123): one line with the author, their words, the time and the reason."
+pattern = "^(thr_)?[1-9][0-9]*$"
+
+[commands.params.properties.confirm]
+type = "boolean"
+description = "True once removing it was agreed (the owner's yes, or the event's spam rule). Without it, nothing is removed."
+
+[commands.params.properties.account]
+type = "string"
+description = "The label of the YouTube sign-in to use for this call (spacesheep, for the vault's youtube.spacesheep), instead of the account setting."
+maxLength = 32
+pattern = "^([a-z0-9][a-z0-9._-]*)?$"
+
+[[commands]]
+kind = "youtube.chat_timeout"
+title = "Time someone out of a live chat (…, seconds, confirm)"
+slash = "chat-timeout"
+summary = "Keep someone out of a live chat the channel moderates for a while; needs confirm=true"
+
+# From ChatTimeoutParams in proto/youtube/v1/youtube.proto: `pointman-extension manifest write`
+[commands.params]
+type = "object"
+description = "youtube.chat_timeout: keep someone out of a live chat the channel owns or moderates for a while."
+required = ["author_channel_id", "seconds"]
+additionalProperties = false
+
+[commands.params.properties.video]
+type = "string"
+description = "The live video's id. Or give chat_id."
+pattern = "^([A-Za-z0-9_-]{11})?$"
+
+[commands.params.properties.chat_id]
+type = "string"
+description = "The live chat's id, instead of video."
+maxLength = 200
+pattern = '^\S*$'
+
+[commands.params.properties.author_channel_id]
+type = "string"
+description = "Their channel (UC…, youtube.chat's author_channel_id)."
+pattern = "^UC[A-Za-z0-9_-]{22}$"
+
+[commands.params.properties.seconds]
+type = "integer"
+description = "For how long, in seconds: 10 to 86,400 (a day)."
+minimum = 10
+maximum = 86400
+
+[commands.params.properties.confirm]
+type = "boolean"
+description = "True once the owner has said yes to timing them out. Without it, nothing changes."
 
 [commands.params.properties.account]
 type = "string"

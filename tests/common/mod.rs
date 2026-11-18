@@ -56,6 +56,18 @@ pub struct State {
     /// Device-flow polls answered "authorization_pending" before the person says yes.
     pub pending_polls: u32,
     pub made: u32,
+    /// The channel's broadcasts, each with `_status` (active or upcoming), as liveBroadcasts.list filters them.
+    pub broadcasts: Vec<Value>,
+    /// Each live chat's messages, oldest first.
+    pub chats: HashMap<String, Vec<Value>>,
+    /// Chats that have ended: liveChatMessages.list says liveChatEnded.
+    pub ended: Vec<String>,
+    /// Messages liveChatMessages.delete took.
+    pub deleted: Vec<String>,
+    /// What liveChatBans.insert was sent.
+    pub bans: Vec<Value>,
+    /// The scopes the token endpoint says a token has (SCOPE unless a test says).
+    pub scope: Option<String>,
 }
 
 #[derive(Clone)]
@@ -119,6 +131,28 @@ impl Fake {
         let mut s = self.state();
         s.videos.insert(id.into(), v);
         s.order.insert(0, id.into());
+    }
+
+    /// A live video with a chat open.
+    pub fn add_live(&self, id: &str, title: &str, chat: &str) {
+        self.add_video(id, title, "public", 10);
+        let mut s = self.state();
+        let v = s.videos.get_mut(id).unwrap();
+        v["liveStreamingDetails"] = json!({"actualStartTime": "2026-11-18T14:00:00Z", "activeLiveChatId": chat});
+        s.chats.entry(chat.into()).or_default();
+    }
+
+    /// A message in a chat, as liveChatMessages gives it.
+    pub fn say(&self, chat: &str, id: &str, author: &str, channel: &str, text: &str, at: &str) {
+        let m = json!({
+            "kind": "youtube#liveChatMessage", "id": id,
+            "snippet": {"type": "textMessageEvent", "liveChatId": chat, "authorChannelId": channel,
+                        "publishedAt": at, "hasDisplayContent": true, "displayMessage": text,
+                        "textMessageDetails": {"messageText": text}},
+            "authorDetails": {"channelId": channel, "displayName": author, "isVerified": false,
+                              "isChatOwner": false, "isChatSponsor": false, "isChatModerator": false}
+        });
+        self.state().chats.entry(chat.into()).or_default().push(m);
     }
 
     fn serve(&self, mut stream: TcpStream) {
@@ -376,6 +410,52 @@ impl Fake {
                 s.playlist_items.push((pl, video));
                 (200, vec![], json!({"id": "pli1", "snippet": sn}))
             }
+            ("GET", "/youtube/v3/liveBroadcasts") => {
+                let want = query.get("broadcastStatus").cloned().unwrap_or_default();
+                let items: Vec<Value> =
+                    s.broadcasts.iter().filter(|b| b["_status"] == want.as_str()).cloned().collect();
+                (200, vec![], json!({"items": items}))
+            }
+            ("GET", "/youtube/v3/liveChat/messages") => {
+                let chat = query.get("liveChatId").cloned().unwrap_or_default();
+                if s.ended.contains(&chat) {
+                    return error(403, "liveChatEnded", "The live chat is no longer live.");
+                }
+                let Some(all) = s.chats.get(&chat) else { return error(404, "liveChatNotFound", "no chat") };
+                let from: usize = query.get("pageToken").and_then(|t| t.strip_prefix('p')?.parse().ok()).unwrap_or(0);
+                let items: Vec<Value> = all.iter().skip(from).cloned().collect();
+                (
+                    200,
+                    vec![],
+                    json!({"items": items, "nextPageToken": format!("p{}", all.len()), "pollingIntervalMillis": 1000}),
+                )
+            }
+            ("POST", "/youtube/v3/liveChat/messages") => {
+                let chat = body_json["snippet"]["liveChatId"].as_str().unwrap_or_default().to_string();
+                let id = format!("LCC.sent{}", s.requests.len());
+                let mut m = body_json.clone();
+                m["id"] = json!(id);
+                s.chats.entry(chat).or_default().push(m.clone());
+                (200, vec![], m)
+            }
+            ("DELETE", "/youtube/v3/liveChat/messages") => {
+                let id = query.get("id").cloned().unwrap_or_default();
+                let mut found = false;
+                for msgs in s.chats.values_mut() {
+                    let n = msgs.len();
+                    msgs.retain(|m| m["id"] != id.as_str());
+                    found |= msgs.len() != n;
+                }
+                if !found {
+                    return error(404, "liveChatMessageNotFound", "no message");
+                }
+                s.deleted.push(id);
+                (204, vec![], Value::Null)
+            }
+            ("POST", "/youtube/v3/liveChat/bans") => {
+                s.bans.push(body_json.clone());
+                (200, vec![], json!({"id": "ban1", "snippet": body_json["snippet"]}))
+            }
             _ => error(404, "notFound", "no such endpoint in the fake"),
         }
     }
@@ -409,10 +489,11 @@ impl Fake {
                     return oops(400, "invalid_grant");
                 }
                 s.tokens.push(token.clone());
+                let scope = s.scope.clone().unwrap_or_else(|| SCOPE.to_string());
                 (
                     200,
                     vec![],
-                    json!({"access_token": token, "expires_in": 3599, "scope": SCOPE, "token_type": "Bearer"}),
+                    json!({"access_token": token, "expires_in": 3599, "scope": scope, "token_type": "Bearer"}),
                 )
             }
             Some("urn:ietf:params:oauth:grant-type:device_code") => {
@@ -452,9 +533,11 @@ fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
         201 => "Created",
+        204 => "No Content",
         308 => "Resume Incomplete",
         400 => "Bad Request",
         401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         428 => "Precondition Required",
         _ => "Status",
