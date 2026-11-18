@@ -52,7 +52,26 @@ pub fn defang(text: &str) -> String {
     }
 }
 
-/// A live video's chat: its id and the video's title, or an error saying why there's none.
+/// A live video whose chat isn't open yet: a scheduled stream that hasn't started, or one with its chat still off.
+/// Worth waiting for, unlike a video that isn't live at all or has ended.
+#[derive(Debug)]
+pub struct NotOpen(pub String);
+
+impl std::fmt::Display for NotOpen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for NotOpen {}
+
+/// Whether an error is a chat that isn't open yet ([`NotOpen`]).
+pub fn not_open(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<NotOpen>().is_some()
+}
+
+/// A live video's chat: its id and the video's title, or an error saying why there's none ([`NotOpen`] when it may
+/// still open).
 pub fn of_video(api: &Api, video: &str) -> anyhow::Result<(String, String)> {
     let got = api.get("videos", &[("part", "snippet,liveStreamingDetails"), ("id", video)])?;
     let Some(v) = got["items"].as_array().and_then(|i| i.first()) else {
@@ -64,7 +83,10 @@ pub fn of_video(api: &Api, video: &str) -> anyhow::Result<(String, String)> {
         Some(chat) => Ok((chat.to_string(), title)),
         None if live.is_null() => bail!("\"{title}\" ({video}) isn't a live stream, so it has no live chat"),
         None if live["actualEndTime"].is_string() => bail!("\"{title}\" ({video}) has ended: its live chat is closed"),
-        None => bail!("\"{title}\" ({video}) has no live chat open: it's off, or the stream hasn't started"),
+        None => Err(NotOpen(format!(
+            "\"{title}\" ({video}) has no live chat open yet: the stream hasn't started, or its chat is off"
+        ))
+        .into()),
     }
 }
 

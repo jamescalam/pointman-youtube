@@ -240,3 +240,46 @@ fn chat_send_and_timeout_with_confirm() {
     assert_eq!(ban["snippet"]["bannedUserDetails"]["channelId"], SPAMMER);
     assert_eq!(ban["snippet"]["liveChatId"], CHAT);
 }
+
+#[test]
+fn chat_watch_started_before_the_stream_waits_for_its_chat() {
+    let fake = Fake::start();
+    fake.add_live(VIDEO, "Read less, know more", CHAT);
+    // scheduled, not started: YouTube gives no activeLiveChatId yet
+    fake.state().videos.get_mut(VIDEO).unwrap()["liveStreamingDetails"] =
+        json!({"scheduledStartTime": "2026-11-19T02:40:00Z"});
+    let (node, posts) = start(&fake);
+    let n = Arc::new(node);
+    let runner = n.clone();
+    let watch = std::thread::spawn(move || {
+        runner.run_with(
+            "youtube.chat_watch",
+            json!({"video": VIDEO, "thread": "71027", "every_seconds": 5}),
+            RunOptions { timeout: Duration::from_secs(60), cid: Some("early".into()), ..Default::default() },
+        )
+    });
+    let got = wait_for(&posts, 1);
+    assert!(got[0].1.contains("Waiting for the stream's chat to open"), "{got:?}");
+    // the stream starts
+    fake.state().videos.get_mut(VIDEO).unwrap()["liveStreamingDetails"] =
+        json!({"actualStartTime": "2026-11-19T02:41:00Z", "activeLiveChatId": CHAT});
+    let got = wait_for(&posts, 2);
+    assert!(got[1].1.contains("chat is open"), "{got:?}");
+    fake.say(CHAT, "LCC.9", "Ana", "UCanaanaanaanaanaanaana1", "first!", "2026-11-19T02:41:05Z");
+    let got = wait_for(&posts, 3);
+    assert!(got[2].2.to_string().contains("first!"), "{got:?}");
+    assert!(n.cancel("early").unwrap());
+    let done = watch.join().unwrap().unwrap().result;
+    assert_eq!(done["stopped"], "cancelled");
+    assert_eq!(done["messages"], 1);
+}
+
+#[test]
+fn chat_watch_on_a_video_that_isnt_live_fails_at_once() {
+    let fake = Fake::start();
+    fake.add_video("notlive0001", "A tutorial", "public", 5);
+    let (node, posts) = start(&fake);
+    let e = node.run("youtube.chat_watch", json!({"video": "notlive0001", "thread": "71027"})).unwrap_err();
+    assert!(e.message.contains("isn't a live stream"), "{e}");
+    assert!(posts.lock().unwrap().is_empty());
+}

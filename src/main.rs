@@ -486,8 +486,48 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
     let every_ms = (p.every_seconds.clamp(5, 300) as u64) * 1000;
     let deadline = Instant::now() + Duration::from_secs(p.minutes.clamp(1, 720) as u64 * 60);
     let mention = chat::mention(&p.mention);
+    let stop = |stopped: &str, chat_id: String| ChatWatchResult {
+        text: format!("Stopped ({stopped}) before the chat of {} opened.", channel::url(&p.video)),
+        stopped: stopped.to_string(),
+        chat_id,
+        ..Default::default()
+    };
+    // started before the stream: wait for its chat to open, as a drop does
+    let mut said_waiting = false;
+    let (mut chat_id, title) = loop {
+        match x.api(&p.account, |api| chat::of_video(api, &p.video)) {
+            Ok(found) => break found,
+            Err(e) if chat::not_open(&e) => {
+                if !said_waiting {
+                    let line = format!(
+                        "[{}] Waiting for the stream's chat to open ({}): trying every {} s.",
+                        words::now_clock(),
+                        channel::url(&p.video),
+                        RETRY_MS / 1000
+                    );
+                    if let Err(e) = x.post(&p.thread, line, vec![]) {
+                        bail!("couldn't post in thread {}: {e:#}", p.thread);
+                    }
+                    said_waiting = true;
+                    job.progress(None, "waiting for the chat to open");
+                }
+                if Instant::now() >= deadline {
+                    return Ok(stop("minutes", String::new()));
+                }
+                if wait(job, RETRY_MS) {
+                    return Ok(stop("cancelled", String::new()));
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    if said_waiting {
+        let line = format!("[{}] The stream's chat is open: watching it.", words::now_clock());
+        if let Err(e) = x.post(&p.thread, line, vec![]) {
+            x.h.log(format!("couldn't post that the chat opened: {e:#}"));
+        }
+    }
     // the chat as it is now: what's in it already isn't posted
-    let (mut chat_id, title) = x.api(&p.account, |api| chat::of_video(api, &p.video))?;
     let mut token = x.api(&p.account, |api| chat::page(api, &chat_id, "", "200"))?.next;
     let mut seen = std::collections::HashSet::new();
     let (mut batches, mut count) = (0i32, 0i32);
