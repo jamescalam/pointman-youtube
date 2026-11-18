@@ -155,6 +155,11 @@ pub fn ended(e: &anyhow::Error) -> bool {
     )
 }
 
+/// Whether an error is YouTube saying the channel can't live stream (it has no broadcasts to list).
+pub fn not_enabled(e: &anyhow::Error) -> bool {
+    matches!(e.downcast_ref::<Failure>(), Some(Failure::Said { reason, .. }) if reason == "liveStreamingNotEnabled")
+}
+
 /// The channel's broadcasts with `status` (YouTube's broadcastStatus: active or upcoming).
 pub fn broadcasts(api: &Api, status: &str) -> anyhow::Result<Vec<Broadcast>> {
     let got = api.get(

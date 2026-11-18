@@ -283,3 +283,18 @@ fn chat_watch_on_a_video_that_isnt_live_fails_at_once() {
     assert!(e.message.contains("isn't a live stream"), "{e}");
     assert!(posts.lock().unwrap().is_empty());
 }
+
+#[test]
+fn live_on_a_channel_that_cant_stream_says_so_and_still_gives_the_scopes() {
+    let fake = live_fake();
+    fake.state().no_live = true;
+    let (node, _) = start(&fake);
+    let done = node.run("youtube.live", json!({})).unwrap().result;
+    assert_ne!(done["can_stream"], true, "{done}");
+    assert!(done["text"].as_str().unwrap().contains("isn't enabled for live streaming"), "{done}");
+    assert_eq!(done["can_moderate"], true, "{done}");
+    // and a channel that can: can_stream
+    let fake = live_fake();
+    let (node, _) = start(&fake);
+    assert_eq!(node.run("youtube.live", json!({})).unwrap().result["can_stream"], true);
+}
