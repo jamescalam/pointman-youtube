@@ -9,25 +9,30 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail};
 use pointman_extension::protocol::{
-    CredentialsCodeRequest, CredentialsCodeResponse, CredentialsSignInRequest, CredentialsWaitRequest,
-    CredentialsWaitResponse,
+    BoardPostRequest, CredentialsCodeRequest, CredentialsCodeResponse, CredentialsSignInRequest,
+    CredentialsWaitRequest, CredentialsWaitResponse,
 };
-use pointman_extension::{Extension, Handle, Job};
+use pointman_extension::v1::{Block, ThreadRef};
+use pointman_extension::{blocks, Extension, Handle, Job};
 use regex::Regex;
 use serde_json::json;
 use youtube::google::{self, Api, Endpoints, OAuthClient};
 use youtube::params::{check_video, known, rfc3339, timestamp};
 use youtube::signin::{self, SignIns};
 use youtube::v1::{
-    AddParams, AddResult, Category, ClientParams, ClientResult, Privacy, Settings, ThumbnailParams, ThumbnailResult,
+    AddParams, AddResult, Category, ChatMessage, ChatParams, ChatRemoveParams, ChatRemoveResult, ChatResult,
+    ChatSendParams, ChatSendResult, ChatTimeoutParams, ChatTimeoutResult, ChatWatchParams, ChatWatchResult,
+    ClientParams, ClientResult, LiveParams, LiveResult, Privacy, Settings, ThumbnailParams, ThumbnailResult,
     UpdateParams, UpdateResult, UploadParams, UploadResult, VideoParams, VideoResult, VideosParams, VideosResult,
 };
-use youtube::{channel, upload, words, CLIENT_ITEM};
+use youtube::{channel, chat, upload, words, CLIENT_ITEM};
 
 struct Cached {
     name: String,
     token: String,
     until: Instant,
+    /// The scopes Google says the token has.
+    scopes: String,
 }
 
 struct Ext {
@@ -119,9 +124,28 @@ impl Ext {
             .ok_or_else(|| {
                 anyhow!("{name} isn't a Google refresh token: sign the channel in again with /youtube add")
             })?;
-        let (token, lasts) = google::access_token(&self.agent, &self.ends, &self.client()?, &refresh)?;
-        *cached = Some(Cached { name, token: token.clone(), until: Instant::now() + lasts });
+        let (token, lasts, scopes) = google::access_token(&self.agent, &self.ends, &self.client()?, &refresh)?;
+        *cached = Some(Cached { name, token: token.clone(), until: Instant::now() + lasts, scopes });
         Ok(token)
+    }
+
+    /// The scopes the sign-in's token has, as Google gave them with it.
+    fn scopes(&self, asked: &str) -> anyhow::Result<String> {
+        self.token(asked, false)?;
+        let cached = self.cached.lock().unwrap_or_else(|e| e.into_inner());
+        Ok(cached.as_ref().map(|c| c.scopes.clone()).unwrap_or_default())
+    }
+
+    /// A post in a thread, as the extension's robot: its id.
+    fn post(&self, thread: &str, text: String, blocks: Vec<Block>) -> anyhow::Result<String> {
+        let ask = BoardPostRequest {
+            thread: ThreadRef { id: chat::thread_id(thread), ..Default::default() }.into(),
+            text,
+            blocks,
+            ..Default::default()
+        };
+        let answer = self.h.request(&ask)?;
+        Ok(answer.post.as_option().map(|p| p.id.clone()).unwrap_or_default())
     }
 
     fn api<T>(&self, account: &str, f: impl FnOnce(&Api) -> anyhow::Result<T>) -> anyhow::Result<T> {
@@ -370,6 +394,346 @@ fn thumbnail(x: &Ext, _: &Job, p: ThumbnailParams) -> anyhow::Result<ThumbnailRe
     })
 }
 
+/// youtube.chat's lines: one per message, at most `most`.
+fn chat_lines(messages: &[ChatMessage], most: usize) -> String {
+    let mut text = String::new();
+    for m in messages.iter().take(most) {
+        text.push_str(&format!("\n- {} {}: {} ({})", chat::clock(m), chat::who(m), chat::defang(&m.text), m.id));
+    }
+    if messages.len() > most {
+        text.push_str(&format!("\n… and {} more in messages", messages.len() - most));
+    }
+    text
+}
+
+fn live(x: &Ext, _: &Job, p: LiveParams) -> anyhow::Result<LiveResult> {
+    let mut broadcasts = x.api(&p.account, |api| chat::broadcasts(api, "active"))?;
+    broadcasts.extend(x.api(&p.account, |api| chat::broadcasts(api, "upcoming"))?);
+    let scopes = x.scopes(&p.account)?;
+    let can_moderate = chat::can_moderate(&scopes);
+    let mut text = match broadcasts.len() {
+        0 => "The channel has no live or upcoming broadcasts.".to_string(),
+        n => format!("The channel's {n} live and upcoming broadcasts:"),
+    };
+    for b in &broadcasts {
+        let when = b.starts_at.as_option().map(|t| words::day(&rfc3339(t), true)).unwrap_or_default();
+        let chat = if b.chat_id.is_empty() { "no chat".to_string() } else { format!("chat {}", b.chat_id) };
+        text.push_str(&format!("\n- {} ({}, {when}): {}, {chat}", b.title, b.status, b.url));
+    }
+    text.push_str(if can_moderate {
+        "\nThe sign-in may send, remove and time out in chats the channel owns or moderates."
+    } else {
+        "\nThe sign-in can't moderate chat (it needs the youtube or youtube.force-ssl scope): sign in again with /youtube add."
+    });
+    Ok(LiveResult {
+        text,
+        broadcasts,
+        scopes: scopes.split_whitespace().map(String::from).collect(),
+        can_moderate,
+        ..Default::default()
+    })
+}
+
+fn chat_read(x: &Ext, _: &Job, p: ChatParams) -> anyhow::Result<ChatResult> {
+    let (chat_id, page) = x.api(&p.account, |api| {
+        let chat_id = chat::resolve(api, &p.video, &p.chat_id)?;
+        let page = chat::page(api, &chat_id, p.page_token.trim(), "500")?;
+        Ok((chat_id, page))
+    })?;
+    let mut text = match page.messages.len() {
+        0 => "No new messages in the chat.".to_string(),
+        n => format!("{n} chat messages, oldest first:"),
+    };
+    text.push_str(&chat_lines(&page.messages, 50));
+    if let Some(at) = &page.offline_at {
+        text.push_str(&format!("\nThe chat went offline {}.", words::day(at, true)));
+    } else {
+        text.push_str(&format!(
+            "\nNext: youtube.chat with page_token={}, in {} s at the soonest.",
+            page.next,
+            (page.poll_ms as f64 / 1000.0).ceil()
+        ));
+    }
+    Ok(ChatResult {
+        text,
+        messages: page.messages,
+        page_token: page.next,
+        poll_ms: page.poll_ms,
+        chat_id,
+        offline_at: page.offline_at.as_deref().and_then(timestamp).into(),
+        ..Default::default()
+    })
+}
+
+/// Waits `ms`, or less if the job is cancelled: whether it was.
+fn wait(job: &Job, ms: u64) -> bool {
+    let until = Instant::now() + Duration::from_millis(ms);
+    while Instant::now() < until {
+        if job.cancelled() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(250).min(until - Instant::now()));
+    }
+    job.cancelled()
+}
+
+/// How long chat_watch waits between tries while the chat is down.
+const RETRY_MS: u64 = 10_000;
+/// The most rows in one batch's post: more go in another post.
+const ROWS: usize = 50;
+
+fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatchResult> {
+    let every_ms = (p.every_seconds.clamp(5, 300) as u64) * 1000;
+    let deadline = Instant::now() + Duration::from_secs(p.minutes.clamp(1, 720) as u64 * 60);
+    let mention = chat::mention(&p.mention);
+    let stop = |stopped: &str, chat_id: String| ChatWatchResult {
+        text: format!("Stopped ({stopped}) before the chat of {} opened.", channel::url(&p.video)),
+        stopped: stopped.to_string(),
+        chat_id,
+        ..Default::default()
+    };
+    // started before the stream: wait for its chat to open, as a drop does
+    let mut said_waiting = false;
+    let (mut chat_id, title) = loop {
+        match x.api(&p.account, |api| chat::of_video(api, &p.video)) {
+            Ok(found) => break found,
+            Err(e) if chat::not_open(&e) => {
+                if !said_waiting {
+                    let line = format!(
+                        "[{}] Waiting for the stream's chat to open ({}): trying every {} s.",
+                        words::now_clock(),
+                        channel::url(&p.video),
+                        RETRY_MS / 1000
+                    );
+                    if let Err(e) = x.post(&p.thread, line, vec![]) {
+                        bail!("couldn't post in thread {}: {e:#}", p.thread);
+                    }
+                    said_waiting = true;
+                    job.progress(None, "waiting for the chat to open");
+                }
+                if Instant::now() >= deadline {
+                    return Ok(stop("minutes", String::new()));
+                }
+                if wait(job, RETRY_MS) {
+                    return Ok(stop("cancelled", String::new()));
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    if said_waiting {
+        let line = format!("[{}] The stream's chat is open: watching it.", words::now_clock());
+        if let Err(e) = x.post(&p.thread, line, vec![]) {
+            x.h.log(format!("couldn't post that the chat opened: {e:#}"));
+        }
+    }
+    // the chat as it is now: what's in it already isn't posted
+    let mut token = x.api(&p.account, |api| chat::page(api, &chat_id, "", "200"))?.next;
+    let mut seen = std::collections::HashSet::new();
+    let (mut batches, mut count) = (0i32, 0i32);
+    let mut down: Option<String> = None;
+    let mut posting_failed = 0;
+    x.h.log(format!("watching the chat of {} ({chat_id}) for thread {}", p.video, p.thread));
+    job.progress(None, "watching the chat");
+    let stopped = loop {
+        if Instant::now() >= deadline {
+            break "minutes";
+        }
+        if wait(job, if down.is_some() { RETRY_MS } else { every_ms }) {
+            break "cancelled";
+        }
+        // after a drop, the stream may come back with its chat again (or a new one): find it from the video
+        if down.is_some() {
+            match x.api(&p.account, |api| chat::of_video(api, &p.video)) {
+                Ok((c, _)) => {
+                    if c != chat_id {
+                        token.clear();
+                    }
+                    chat_id = c;
+                }
+                Err(e) => {
+                    x.h.log(format!("chat still down: {e:#}"));
+                    continue;
+                }
+            }
+        }
+        let got = x.api(&p.account, |api| chat::page(api, &chat_id, &token, "2000"));
+        let page = match got {
+            Ok(page) if page.offline_at.is_none() => page,
+            Ok(_) | Err(_) => {
+                let why = match got {
+                    Ok(_) => "the chat went offline".to_string(),
+                    Err(e) if chat::ended(&e) => "the chat ended".to_string(),
+                    Err(e) => format!("{e:#}"),
+                };
+                if down.is_none() {
+                    let line = format!(
+                        "[{}] YouTube chat dropped ({why}): trying again every {} s.",
+                        words::now_clock(),
+                        RETRY_MS / 1000
+                    );
+                    if let Err(e) = x.post(&p.thread, line, vec![]) {
+                        x.h.log(format!("couldn't post the drop: {e:#}"));
+                    }
+                    down = Some(why);
+                }
+                job.progress(None, "the chat is down: trying again");
+                continue;
+            }
+        };
+        if let Some(why) = down.take() {
+            let line = format!("[{}] YouTube chat is back (after: {why}).", words::now_clock());
+            if let Err(e) = x.post(&p.thread, line, vec![]) {
+                x.h.log(format!("couldn't post the return: {e:#}"));
+            }
+            job.progress(None, "watching the chat");
+        }
+        token = page.next;
+        let fresh: Vec<ChatMessage> = page.messages.into_iter().filter(|m| seen.insert(m.id.clone())).collect();
+        if seen.len() > 20_000 {
+            seen.clear();
+        }
+        for (i, part) in fresh.chunks(ROWS).enumerate() {
+            let mut text =
+                format!("[{}] {} new in YouTube chat · {}", words::now_clock(), part.len(), chat::defang(&title));
+            if fresh.len() > ROWS {
+                text.push_str(&format!(" ({}/{})", i + 1, fresh.len().div_ceil(ROWS)));
+            }
+            if !mention.is_empty() {
+                text.push_str(&format!(" {mention}"));
+            }
+            let rows = part
+                .iter()
+                .map(|m| (m.id.clone(), vec![json!(chat::clock(m)), json!(chat::who(m)), json!(chat::defang(&m.text))]))
+                .collect();
+            let table = blocks::table("chat", &["Time", "Who", "Message"], rows);
+            match x.post(&p.thread, text, vec![table]) {
+                Ok(_) => {
+                    posting_failed = 0;
+                    batches += 1;
+                    count += part.len() as i32;
+                }
+                Err(e) => {
+                    posting_failed += 1;
+                    x.h.log(format!("couldn't post a batch: {e:#}"));
+                    if posting_failed >= 3 || batches == 0 {
+                        bail!("couldn't post the chat in thread {}: {e:#}", p.thread);
+                    }
+                }
+            }
+        }
+        if (page.poll_ms as u64) > every_ms {
+            // YouTube asks for a longer wait than every_seconds: keep to it
+            if wait(job, page.poll_ms as u64 - every_ms) {
+                break "cancelled";
+            }
+        }
+        job.progress(None, format!("{count} messages in {batches} batches").as_str());
+    };
+    Ok(ChatWatchResult {
+        text: format!(
+            "Watched the chat of \"{title}\" ({}): {count} messages in {batches} batches posted; stopped: {stopped}.",
+            channel::url(&p.video)
+        ),
+        batches,
+        messages: count,
+        stopped: stopped.to_string(),
+        chat_id,
+        ..Default::default()
+    })
+}
+
+fn chat_send(x: &Ext, _: &Job, p: ChatSendParams) -> anyhow::Result<ChatSendResult> {
+    if !p.confirm {
+        bail!(
+            "not sent: youtube.chat_send needs confirm=true, given only once the channel's owner has said yes to \
+             sending \"{}\" in the chat of {}",
+            p.text,
+            channel::url(&p.video)
+        );
+    }
+    let text = p.text.trim();
+    if text.is_empty() || text.chars().count() > 200 {
+        bail!("not sent: a chat message is 1 to 200 characters");
+    }
+    let (chat_id, title) = x.api(&p.account, |api| chat::of_video(api, &p.video))?;
+    let id = x.api(&p.account, |api| chat::send(api, &chat_id, text))?;
+    Ok(ChatSendResult {
+        text: format!("Sent in the chat of \"{title}\": \"{text}\" ({id})."),
+        message_id: id,
+        chat_id,
+        ..Default::default()
+    })
+}
+
+fn chat_remove(x: &Ext, _: &Job, p: ChatRemoveParams) -> anyhow::Result<ChatRemoveResult> {
+    if !p.confirm {
+        bail!(
+            "not removed: youtube.chat_remove needs confirm=true, given only once removing message {} was agreed \
+             ({})",
+            p.message_id,
+            p.reason
+        );
+    }
+    let reason = p.reason.trim();
+    if reason.is_empty() {
+        bail!("not removed: give the reason, for the log");
+    }
+    let m = x.api(&p.account, |api| {
+        let chat_id = chat::resolve(api, &p.video, &p.chat_id)?;
+        let page = chat::page(api, &chat_id, "", chat::MOST)?;
+        match page.messages.into_iter().find(|m| m.id == p.message_id) {
+            Some(m) => Ok(m),
+            None => bail!(
+                "not removed: message {} isn't among the latest messages of chat {chat_id}: check the video and the id",
+                p.message_id
+            ),
+        }
+    })?;
+    x.api(&p.account, |api| chat::remove(api, &m.id))?;
+    let line = chat::removed_line(&m, reason);
+    let (logged, note) = match x.post(&p.thread, line, vec![]) {
+        Ok(post) => (post, String::new()),
+        Err(e) => (String::new(), format!(" It wasn't logged in thread {} ({e:#}): log it by hand.", p.thread)),
+    };
+    Ok(ChatRemoveResult {
+        text: format!(
+            "Removed {}'s message from {} (\"{}\"), reason: {reason}.{note}",
+            chat::who(&m),
+            chat::clock(&m),
+            chat::defang(&m.text)
+        ),
+        message_id: m.id.clone(),
+        message: m.into(),
+        logged,
+        ..Default::default()
+    })
+}
+
+fn chat_timeout(x: &Ext, _: &Job, p: ChatTimeoutParams) -> anyhow::Result<ChatTimeoutResult> {
+    if !p.confirm {
+        bail!(
+            "not timed out: youtube.chat_timeout needs confirm=true, given only once the owner has said yes to \
+             keeping {} out of the chat for {} s",
+            p.author_channel_id,
+            p.seconds
+        );
+    }
+    if !(10..=86_400).contains(&p.seconds) {
+        bail!("not timed out: seconds is 10 to 86,400");
+    }
+    let chat_id = x.api(&p.account, |api| chat::resolve(api, &p.video, &p.chat_id))?;
+    let ban = x.api(&p.account, |api| chat::timeout(api, &chat_id, &p.author_channel_id, p.seconds))?;
+    let until = time::OffsetDateTime::now_utc().unix_timestamp() + p.seconds as i64;
+    Ok(ChatTimeoutResult {
+        text: format!("Timed {} out of the chat for {} s ({ban}).", p.author_channel_id, p.seconds),
+        ban_id: ban,
+        chat_id,
+        until: buffa_types::google::protobuf::Timestamp { seconds: until, ..Default::default() }.into(),
+        ..Default::default()
+    })
+}
+
 fn main() -> anyhow::Result<()> {
     let mut ext = Extension::new()?;
     let x = Arc::new(Ext {
@@ -390,6 +754,18 @@ fn main() -> anyhow::Result<()> {
     ext.typed_command(move |job: &Job, p: UpdateParams| update(&xx, job, p));
     let xx = x.clone();
     ext.typed_command(move |job: &Job, p: ThumbnailParams| thumbnail(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: LiveParams| live(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: ChatParams| chat_read(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: ChatWatchParams| chat_watch(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: ChatSendParams| chat_send(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: ChatRemoveParams| chat_remove(&xx, job, p));
+    let xx = x.clone();
+    ext.typed_command(move |job: &Job, p: ChatTimeoutParams| chat_timeout(&xx, job, p));
 
     // `/youtube add` and `/youtube client` posted (an agent, an older app): the apps open the forms for them
     ext.typed_command(|_: &Job, _: AddParams| {

@@ -48,6 +48,12 @@ pub fn and(items: &[&str]) -> String {
     }
 }
 
+/// The time now, `HH:MM:SS UTC`, as a post's stamp.
+pub fn now_clock() -> String {
+    let s = time::OffsetDateTime::now_utc().unix_timestamp().rem_euclid(86_400);
+    format!("{:02}:{:02}:{:02} UTC", s / 3600, s / 60 % 60, s % 60)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
