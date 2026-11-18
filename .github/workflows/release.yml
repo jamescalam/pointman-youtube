@@ -8,8 +8,9 @@
 # each platform in `platforms`; one missing is refused.
 #
 # Linux builds are musl, so static: they run on any distribution, NixOS included, whose loader
-# isn't where a glibc build looks for it. Both Macs build on macos-15, the Intel one cross-compiled
-# (GitHub retired its macos-13 runners), so that's the one build whose tests don't run.
+# isn't where a glibc build looks for it. Both Macs build on one macos-15 runner, the Intel one cross-compiled
+# (GitHub retired its macos-13 runners), so that's the one build whose tests don't run. One runner, not two: GitHub's
+# arm64 Macs are short at times, and a second Mac job can wait in the queue until GitHub gives up on it.
 name: release
 on:
   push:
@@ -27,10 +28,10 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { platform: macos-arm64, runner: macos-15, target: aarch64-apple-darwin, test: true }
-          - { platform: macos-x86_64, runner: macos-15, target: x86_64-apple-darwin, test: false }
-          - { platform: linux-x86_64, runner: ubuntu-24.04, target: x86_64-unknown-linux-musl, test: true }
-          - { platform: linux-arm64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, test: true }
+          # targets and platforms pair up in order; tests run for `test`, the runner's own
+          - { name: macos, runner: macos-15, targets: "aarch64-apple-darwin,x86_64-apple-darwin", platforms: "macos-arm64 macos-x86_64", test: aarch64-apple-darwin }
+          - { name: linux-x86_64, runner: ubuntu-24.04, targets: x86_64-unknown-linux-musl, platforms: linux-x86_64, test: x86_64-unknown-linux-musl }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, targets: aarch64-unknown-linux-musl, platforms: linux-arm64, test: aarch64-unknown-linux-musl }
     runs-on: ${{ matrix.runner }}
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
@@ -38,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.targets }}
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Its id and version, and the tag's
@@ -51,8 +52,7 @@ jobs:
           fi
           echo "ID=$id" >> "$GITHUB_ENV"
           echo "VERSION=$version" >> "$GITHUB_ENV"
-      - if: matrix.test
-        run: cargo test --locked --target ${{ matrix.target }}
+      - run: cargo test --locked --target ${{ matrix.test }}
       # the Google OAuth client sign-ins go through when a node has none of its own (src/google.rs): only in this
       # build, so the tests above keep the fake's
       - name: Build, with the default client
@@ -63,17 +63,24 @@ jobs:
             echo "the repo has no YOUTUBE_DEFAULT_CLIENT secret: a release is built with the default client" >&2
             exit 1
           fi
-          cargo build --release --locked --target ${{ matrix.target }}
-      - name: Pack ${{ matrix.platform }}
+          for target in $(echo "${{ matrix.targets }}" | tr , ' '); do
+            cargo build --release --locked --target "$target"
+          done
+      - name: Pack ${{ matrix.platforms }}
         run: |
-          mkdir -p pkg/bin
-          cp "target/${{ matrix.target }}/release/${BIN:-$ID}" "pkg/bin/$ID"
-          chmod 755 "pkg/bin/$ID"
-          cp -R extension.toml SKILL.md references scripts README.md LICENSE pkg/
-          tar -czf "$ID-$VERSION-${{ matrix.platform }}.tar.gz" -C pkg extension.toml SKILL.md references scripts bin README.md LICENSE
+          set -- ${{ matrix.platforms }}
+          for target in $(echo "${{ matrix.targets }}" | tr , ' '); do
+            platform=$1; shift
+            rm -rf pkg && mkdir -p pkg/bin
+            cp "target/$target/release/${BIN:-$ID}" "pkg/bin/$ID"
+            chmod 755 "pkg/bin/$ID"
+            cp -R extension.toml SKILL.md references scripts README.md LICENSE pkg/
+            tar -czf "$ID-$VERSION-$platform.tar.gz" -C pkg extension.toml SKILL.md references scripts bin README.md LICENSE
+          done
+          ls -l ./*.tar.gz
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.platform }}
+          name: ${{ matrix.name }}
           path: "*.tar.gz"
           if-no-files-found: error
 
