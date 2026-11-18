@@ -541,8 +541,10 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
             x.h.log(format!("couldn't post that the chat opened: {e:#}"));
         }
     }
-    // the chat as it is now: what's in it already isn't posted
-    let mut token = x.api(&p.account, |api| chat::page(api, &chat_id, "", "200"))?.next;
+    // the chat as it is now: what's in it already isn't posted, unless the watch was waiting for it to open
+    // (then all of it came after the watch started, and the first poll posts it)
+    let mut token =
+        if said_waiting { String::new() } else { x.api(&p.account, |api| chat::page(api, &chat_id, "", "200"))?.next };
     let mut seen = std::collections::HashSet::new();
     let (mut batches, mut count) = (0i32, 0i32);
     let mut down: Option<String> = None;
