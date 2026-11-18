@@ -407,11 +407,24 @@ fn chat_lines(messages: &[ChatMessage], most: usize) -> String {
 }
 
 fn live(x: &Ext, _: &Job, p: LiveParams) -> anyhow::Result<LiveResult> {
-    let mut broadcasts = x.api(&p.account, |api| chat::broadcasts(api, "active"))?;
-    broadcasts.extend(x.api(&p.account, |api| chat::broadcasts(api, "upcoming"))?);
+    // a channel that can't live stream has no broadcasts: say so, and still say what the sign-in may do
+    let listed = x.api(&p.account, |api| {
+        let mut all = chat::broadcasts(api, "active")?;
+        all.extend(chat::broadcasts(api, "upcoming")?);
+        Ok(all)
+    });
+    let (broadcasts, streams) = match listed {
+        Ok(all) => (all, true),
+        Err(e) if chat::not_enabled(&e) => (vec![], false),
+        Err(e) => return Err(e),
+    };
     let scopes = x.scopes(&p.account)?;
     let can_moderate = chat::can_moderate(&scopes);
     let mut text = match broadcasts.len() {
+        _ if !streams => "YouTube says this channel isn't enabled for live streaming (liveStreamingNotEnabled), so it \
+                          has no broadcasts: turn it on in YouTube Studio (Go live, or youtube.com/features), which \
+                          can take up to 24 hours the first time. Other channels' live chats can still be read."
+            .to_string(),
         0 => "The channel has no live or upcoming broadcasts.".to_string(),
         n => format!("The channel's {n} live and upcoming broadcasts:"),
     };
@@ -428,6 +441,7 @@ fn live(x: &Ext, _: &Job, p: LiveParams) -> anyhow::Result<LiveResult> {
     Ok(LiveResult {
         text,
         broadcasts,
+        can_stream: streams,
         scopes: scopes.split_whitespace().map(String::from).collect(),
         can_moderate,
         ..Default::default()
@@ -527,8 +541,10 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
             x.h.log(format!("couldn't post that the chat opened: {e:#}"));
         }
     }
-    // the chat as it is now: what's in it already isn't posted
-    let mut token = x.api(&p.account, |api| chat::page(api, &chat_id, "", "200"))?.next;
+    // the chat as it is now: what's in it already isn't posted, unless the watch was waiting for it to open
+    // (then all of it came after the watch started, and the first poll posts it)
+    let mut token =
+        if said_waiting { String::new() } else { x.api(&p.account, |api| chat::page(api, &chat_id, "", "200"))?.next };
     let mut seen = std::collections::HashSet::new();
     let (mut batches, mut count) = (0i32, 0i32);
     let mut down: Option<String> = None;

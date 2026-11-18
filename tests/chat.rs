@@ -275,6 +275,36 @@ fn chat_watch_started_before_the_stream_waits_for_its_chat() {
 }
 
 #[test]
+fn chat_watch_started_before_the_stream_posts_what_was_said_as_its_chat_opened() {
+    let fake = Fake::start();
+    fake.add_live(VIDEO, "Read less, know more", CHAT);
+    fake.state().videos.get_mut(VIDEO).unwrap()["liveStreamingDetails"] =
+        json!({"scheduledStartTime": "2026-11-19T02:40:00Z"});
+    let (node, posts) = start(&fake);
+    let n = Arc::new(node);
+    let runner = n.clone();
+    let watch = std::thread::spawn(move || {
+        runner.run_with(
+            "youtube.chat_watch",
+            json!({"video": VIDEO, "thread": "71027", "every_seconds": 5}),
+            RunOptions { timeout: Duration::from_secs(60), cid: Some("opening".into()), ..Default::default() },
+        )
+    });
+    let got = wait_for(&posts, 1);
+    assert!(got[0].1.contains("Waiting for the stream's chat to open"), "{got:?}");
+    // the stream starts, and someone speaks before the watch's next try finds the chat
+    fake.state().videos.get_mut(VIDEO).unwrap()["liveStreamingDetails"] =
+        json!({"actualStartTime": "2026-11-19T02:41:00Z", "activeLiveChatId": CHAT});
+    fake.say(CHAT, "LCC.8", "Ana", "UCanaanaanaanaanaanaana1", "here early!", "2026-11-19T02:41:01Z");
+    let got = wait_for(&posts, 3);
+    assert!(got[1].1.contains("chat is open"), "{got:?}");
+    assert!(got.get(2).is_some_and(|p| p.2.to_string().contains("here early!")), "{got:?}");
+    assert!(n.cancel("opening").unwrap());
+    let done = watch.join().unwrap().unwrap().result;
+    assert_eq!(done["messages"], 1);
+}
+
+#[test]
 fn chat_watch_on_a_video_that_isnt_live_fails_at_once() {
     let fake = Fake::start();
     fake.add_video("notlive0001", "A tutorial", "public", 5);
@@ -282,4 +312,19 @@ fn chat_watch_on_a_video_that_isnt_live_fails_at_once() {
     let e = node.run("youtube.chat_watch", json!({"video": "notlive0001", "thread": "71027"})).unwrap_err();
     assert!(e.message.contains("isn't a live stream"), "{e}");
     assert!(posts.lock().unwrap().is_empty());
+}
+
+#[test]
+fn live_on_a_channel_that_cant_stream_says_so_and_still_gives_the_scopes() {
+    let fake = live_fake();
+    fake.state().no_live = true;
+    let (node, _) = start(&fake);
+    let done = node.run("youtube.live", json!({})).unwrap().result;
+    assert_ne!(done["can_stream"], true, "{done}");
+    assert!(done["text"].as_str().unwrap().contains("isn't enabled for live streaming"), "{done}");
+    assert_eq!(done["can_moderate"], true, "{done}");
+    // and a channel that can: can_stream
+    let fake = live_fake();
+    let (node, _) = start(&fake);
+    assert_eq!(node.run("youtube.live", json!({})).unwrap().result["can_stream"], true);
 }

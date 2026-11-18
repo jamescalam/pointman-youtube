@@ -237,6 +237,8 @@ message LiveResult {
   repeated string scopes = 3;
   // Whether they let it send, remove and time out in a chat the channel owns or moderates (youtube or youtube.force-ssl).
   bool can_moderate = 4;
+  // Whether the channel is enabled for live streaming (YouTube Studio's Go live): without it, it has no broadcasts.
+  bool can_stream = 5;
 }
 
 // One of the channel's broadcasts.

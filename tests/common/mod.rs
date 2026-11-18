@@ -68,6 +68,8 @@ pub struct State {
     pub bans: Vec<Value>,
     /// The scopes the token endpoint says a token has (SCOPE unless a test says).
     pub scope: Option<String>,
+    /// The channel isn't enabled for live streaming: liveBroadcasts.list says liveStreamingNotEnabled.
+    pub no_live: bool,
 }
 
 #[derive(Clone)]
@@ -409,6 +411,9 @@ impl Fake {
                 let video = sn["resourceId"]["videoId"].as_str().unwrap_or_default().to_string();
                 s.playlist_items.push((pl, video));
                 (200, vec![], json!({"id": "pli1", "snippet": sn}))
+            }
+            ("GET", "/youtube/v3/liveBroadcasts") if s.no_live => {
+                error(403, "liveStreamingNotEnabled", "The user is not enabled for live streaming.")
             }
             ("GET", "/youtube/v3/liveBroadcasts") => {
                 let want = query.get("broadcastStatus").cloned().unwrap_or_default();
