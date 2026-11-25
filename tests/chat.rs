@@ -1,5 +1,5 @@
 //! Live chat under a stand-in node, against a fake YouTube (tests/common): reading a chat page by page, watching it
-//! into a thread (and riding out a drop), and the moderator's commands, which do nothing without `confirm`. The
+//! into a Pointman channel (and riding out a drop), and the moderator's commands, which do nothing without `confirm`. The
 //! stand-in answers `board.post` itself and keeps what it was asked to post.
 
 mod common;
@@ -17,7 +17,7 @@ const VIDEO: &str = "live0000001";
 const CHAT: &str = "Cg0KC2xpdmUwMDAwMDAx";
 const SPAMMER: &str = "UCspamspamspamspamspam01";
 
-/// What the extension posted: (thread, text, its blocks as JSON).
+/// What the extension posted: (channel, text, its blocks as JSON).
 type Posts = Arc<Mutex<Vec<(String, String, Value)>>>;
 
 fn start(fake: &Fake) -> (StandIn, Posts) {
@@ -30,8 +30,8 @@ fn start(fake: &Fake) -> (StandIn, Posts) {
         .env("YOUTUBE_OAUTH_BASE", &fake.url)
         .on(move |r: BoardPostRequest| {
             let mut p = p.lock().unwrap();
-            let thread = r.thread.as_option().map(|t| t.id.clone()).unwrap_or_default();
-            p.push((thread, r.text.clone(), serde_json::to_value(&r.blocks).unwrap()));
+            let channel = r.channel.as_option().map(|t| t.id.clone()).unwrap_or_default();
+            p.push((channel, r.text.clone(), serde_json::to_value(&r.blocks).unwrap()));
             let post = PostRef { id: format!("post_{}", 900 + p.len()), ..Default::default() };
             Ok(BoardPostResponse { post: post.into(), ..Default::default() })
         })
@@ -128,7 +128,7 @@ fn chat_watch_posts_new_messages_in_batches_and_rides_out_a_drop() {
     let watch = std::thread::spawn(move || {
         runner.run_with(
             "youtube.chat_watch",
-            json!({"video": VIDEO, "thread": "71027", "every_seconds": 5, "mention": "loupe"}),
+            json!({"video": VIDEO, "channel": "71027", "every_seconds": 5, "mention": "loupe"}),
             RunOptions { timeout: Duration::from_secs(90), cid: Some("watch".into()), ..Default::default() },
         )
     });
@@ -138,8 +138,8 @@ fn chat_watch_posts_new_messages_in_batches_and_rides_out_a_drop() {
     fake.say(CHAT, "LCC.4", "Dev", "UCdevdevdevdevdevdevdev1", "hi @loupe", "2026-11-18T14:00:21Z");
     let got = wait_for(&posts, 1);
     assert_eq!(got.len(), 1, "{got:?}");
-    let (thread, text, blocks) = &got[0];
-    assert_eq!(thread, "thr_71027");
+    let (channel, text, blocks) = &got[0];
+    assert_eq!(channel, "ch_71027");
     assert!(text.contains("2 new in YouTube chat") && text.ends_with(" @loupe"), "{text}");
     let table = blocks.to_string();
     assert!(table.contains("Cleo") && table.contains("Dev"), "{table}");
@@ -171,7 +171,10 @@ fn moderating_without_confirm_does_nothing() {
     let e = node.run("youtube.chat_send", json!({"video": VIDEO, "text": "Welcome!"})).unwrap_err();
     assert!(e.message.contains("confirm=true"), "{e}");
     let e = node
-        .run("youtube.chat_remove", json!({"video": VIDEO, "message_id": "LCC.2", "reason": "spam", "thread": "71027"}))
+        .run(
+            "youtube.chat_remove",
+            json!({"video": VIDEO, "message_id": "LCC.2", "reason": "spam", "channel": "71027"}),
+        )
         .unwrap_err();
     assert!(e.message.contains("confirm=true"), "{e}");
     let e = node
@@ -190,7 +193,7 @@ fn chat_remove_deletes_the_message_and_logs_who_what_when_and_why() {
     let done = node
         .run(
             "youtube.chat_remove",
-            json!({"video": VIDEO, "message_id": "LCC.spam", "reason": "spam link", "thread": "thr_71027", "confirm": true}),
+            json!({"video": VIDEO, "message_id": "LCC.spam", "reason": "spam link", "channel": "ch_71027", "confirm": true}),
         )
         .unwrap()
         .result;
@@ -199,8 +202,8 @@ fn chat_remove_deletes_the_message_and_logs_who_what_when_and_why() {
     assert_eq!(done["logged"], "post_901");
     let got = posts.lock().unwrap().clone();
     assert_eq!(got.len(), 1);
-    let (thread, line, _) = &got[0];
-    assert_eq!(thread, "thr_71027");
+    let (channel, line, _) = &got[0];
+    assert_eq!(channel, "ch_71027");
     for part in ["Crypto King", SPAMMER, "14:02:03 UTC", "FREE BTC at scam.example", "spam link"] {
         assert!(line.contains(part), "{part} in {line}");
     }
@@ -210,7 +213,7 @@ fn chat_remove_deletes_the_message_and_logs_who_what_when_and_why() {
     let e = node
         .run(
             "youtube.chat_remove",
-            json!({"video": VIDEO, "message_id": "LCC.nope", "reason": "spam", "thread": "71027", "confirm": true}),
+            json!({"video": VIDEO, "message_id": "LCC.nope", "reason": "spam", "channel": "71027", "confirm": true}),
         )
         .unwrap_err();
     assert!(e.message.contains("isn't among"), "{e}");
@@ -254,7 +257,7 @@ fn chat_watch_started_before_the_stream_waits_for_its_chat() {
     let watch = std::thread::spawn(move || {
         runner.run_with(
             "youtube.chat_watch",
-            json!({"video": VIDEO, "thread": "71027", "every_seconds": 5}),
+            json!({"video": VIDEO, "channel": "71027", "every_seconds": 5}),
             RunOptions { timeout: Duration::from_secs(60), cid: Some("early".into()), ..Default::default() },
         )
     });
@@ -286,7 +289,7 @@ fn chat_watch_started_before_the_stream_posts_what_was_said_as_its_chat_opened()
     let watch = std::thread::spawn(move || {
         runner.run_with(
             "youtube.chat_watch",
-            json!({"video": VIDEO, "thread": "71027", "every_seconds": 5}),
+            json!({"video": VIDEO, "channel": "71027", "every_seconds": 5}),
             RunOptions { timeout: Duration::from_secs(60), cid: Some("opening".into()), ..Default::default() },
         )
     });
@@ -309,7 +312,7 @@ fn chat_watch_on_a_video_that_isnt_live_fails_at_once() {
     let fake = Fake::start();
     fake.add_video("notlive0001", "A tutorial", "public", 5);
     let (node, posts) = start(&fake);
-    let e = node.run("youtube.chat_watch", json!({"video": "notlive0001", "thread": "71027"})).unwrap_err();
+    let e = node.run("youtube.chat_watch", json!({"video": "notlive0001", "channel": "71027"})).unwrap_err();
     assert!(e.message.contains("isn't a live stream"), "{e}");
     assert!(posts.lock().unwrap().is_empty());
 }

@@ -4,7 +4,7 @@ Everything around the video except the thumbnail (that's [thumbnails.md](thumbna
 thumbnails are designed together: each title gets a thumbnail that adds to it, never repeats it.
 
 The deliverable is one file, `publish/description.md`, with sections in the order YouTube Studio asks
-for them, each ready to paste. Share it in the thread with `share_file`, and share it again at the same
+for them, each ready to paste. Share it in the Pointman channel with `share_file`, and share it again at the same
 path after every change. People read the card, not the Mac, so an unshared edit doesn't exist for them.
 
 ## 1. Read first
@@ -20,7 +20,7 @@ Gather these before writing anything. Each item says where its facts come from.
 | The owner's past uploads | the channel's top videos (see 2) | What this audience clicks on |
 
 If `channel.md` is missing something you need (the footer links, a sponsor disclosure), ask the owner
-once in the thread, and write the answer into `channel.md` so nobody asks again.
+once in the Pointman channel, and write the answer into `channel.md` so nobody asks again.
 
 ## 2. Research
 

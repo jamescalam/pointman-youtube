@@ -4,7 +4,7 @@
 //! and .delete, liveChatBans.insert). Those last three need a chat the channel owns or moderates, and the `youtube` or
 //! `youtube.force-ssl` scope.
 //!
-//! What's posted to a thread is other people's words: [`defang`] keeps a chat message from @mentioning anyone on the
+//! What's posted to a Pointman channel is other people's words: [`defang`] keeps a chat message from @mentioning anyone on the
 //! board, or from being read as a slash command.
 
 use anyhow::bail;
@@ -27,10 +27,10 @@ pub fn can_moderate(scopes: &str) -> bool {
     scopes.split_whitespace().any(|s| MODERATE.contains(&s))
 }
 
-/// A thread param as the board names it: `thr_123` (or a bare `123`).
-pub fn thread_id(given: &str) -> String {
-    let n = given.trim().trim_start_matches("thr_");
-    format!("thr_{n}")
+/// A Pointman channel param as the board names it: `ch_123` (or a bare `123`).
+pub fn channel_id(given: &str) -> String {
+    let n = given.trim().trim_start_matches("ch_");
+    format!("ch_{n}")
 }
 
 /// An agent's handle with its @, or nothing.
@@ -281,9 +281,9 @@ mod tests {
     }
 
     #[test]
-    fn threads_and_mentions_are_written_as_the_board_names_them() {
-        assert_eq!(thread_id("71027"), "thr_71027");
-        assert_eq!(thread_id("thr_71027"), "thr_71027");
+    fn channels_and_mentions_are_written_as_the_board_names_them() {
+        assert_eq!(channel_id("71027"), "ch_71027");
+        assert_eq!(channel_id("ch_71027"), "ch_71027");
         assert_eq!(mention("loupe"), "@loupe");
         assert_eq!(mention("@loupe"), "@loupe");
         assert_eq!(mention(""), "");
