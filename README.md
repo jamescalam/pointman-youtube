@@ -1,7 +1,7 @@
 # youtube
 
 A Pointman extension for agents that publish YouTube videos. Its behaviour covers the research, titles,
-description, chapters, tags and thumbnails for an upload, made in a thread and picked by the channel's
+description, chapters, tags and thumbnails for an upload, made in a Pointman channel and picked by the channel's
 owner. Its process uploads the video and changes a video's details on the channel through the YouTube
 Data API v3, only once the owner has said yes. It works for any channel: the owner's brand, links and
 taste are collected once and kept in the channel's own folder.

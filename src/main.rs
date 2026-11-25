@@ -12,7 +12,7 @@ use pointman_extension::protocol::{
     BoardPostRequest, CredentialsCodeRequest, CredentialsCodeResponse, CredentialsSignInRequest,
     CredentialsWaitRequest, CredentialsWaitResponse,
 };
-use pointman_extension::v1::{Block, ThreadRef};
+use pointman_extension::v1::{Block, ChannelRef};
 use pointman_extension::{blocks, Extension, Handle, Job};
 use regex::Regex;
 use serde_json::json;
@@ -136,10 +136,10 @@ impl Ext {
         Ok(cached.as_ref().map(|c| c.scopes.clone()).unwrap_or_default())
     }
 
-    /// A post in a thread, as the extension's robot: its id.
-    fn post(&self, thread: &str, text: String, blocks: Vec<Block>) -> anyhow::Result<String> {
+    /// A post in a Pointman channel, as the extension's robot: its id.
+    fn post(&self, channel: &str, text: String, blocks: Vec<Block>) -> anyhow::Result<String> {
         let ask = BoardPostRequest {
-            thread: ThreadRef { id: chat::thread_id(thread), ..Default::default() }.into(),
+            channel: ChannelRef { id: chat::channel_id(channel), ..Default::default() }.into(),
             text,
             blocks,
             ..Default::default()
@@ -519,8 +519,8 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
                         channel::url(&p.video),
                         RETRY_MS / 1000
                     );
-                    if let Err(e) = x.post(&p.thread, line, vec![]) {
-                        bail!("couldn't post in thread {}: {e:#}", p.thread);
+                    if let Err(e) = x.post(&p.channel, line, vec![]) {
+                        bail!("couldn't post in Pointman channel {}: {e:#}", p.channel);
                     }
                     said_waiting = true;
                     job.progress(None, "waiting for the chat to open");
@@ -537,7 +537,7 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
     };
     if said_waiting {
         let line = format!("[{}] The stream's chat is open: watching it.", words::now_clock());
-        if let Err(e) = x.post(&p.thread, line, vec![]) {
+        if let Err(e) = x.post(&p.channel, line, vec![]) {
             x.h.log(format!("couldn't post that the chat opened: {e:#}"));
         }
     }
@@ -549,7 +549,7 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
     let (mut batches, mut count) = (0i32, 0i32);
     let mut down: Option<String> = None;
     let mut posting_failed = 0;
-    x.h.log(format!("watching the chat of {} ({chat_id}) for thread {}", p.video, p.thread));
+    x.h.log(format!("watching the chat of {} ({chat_id}) for Pointman channel {}", p.video, p.channel));
     job.progress(None, "watching the chat");
     let stopped = loop {
         if Instant::now() >= deadline {
@@ -588,7 +588,7 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
                         words::now_clock(),
                         RETRY_MS / 1000
                     );
-                    if let Err(e) = x.post(&p.thread, line, vec![]) {
+                    if let Err(e) = x.post(&p.channel, line, vec![]) {
                         x.h.log(format!("couldn't post the drop: {e:#}"));
                     }
                     down = Some(why);
@@ -599,7 +599,7 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
         };
         if let Some(why) = down.take() {
             let line = format!("[{}] YouTube chat is back (after: {why}).", words::now_clock());
-            if let Err(e) = x.post(&p.thread, line, vec![]) {
+            if let Err(e) = x.post(&p.channel, line, vec![]) {
                 x.h.log(format!("couldn't post the return: {e:#}"));
             }
             job.progress(None, "watching the chat");
@@ -623,7 +623,7 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
                 .map(|m| (m.id.clone(), vec![json!(chat::clock(m)), json!(chat::who(m)), json!(chat::defang(&m.text))]))
                 .collect();
             let table = blocks::table("chat", &["Time", "Who", "Message"], rows);
-            match x.post(&p.thread, text, vec![table]) {
+            match x.post(&p.channel, text, vec![table]) {
                 Ok(_) => {
                     posting_failed = 0;
                     batches += 1;
@@ -633,7 +633,7 @@ fn chat_watch(x: &Ext, job: &Job, p: ChatWatchParams) -> anyhow::Result<ChatWatc
                     posting_failed += 1;
                     x.h.log(format!("couldn't post a batch: {e:#}"));
                     if posting_failed >= 3 || batches == 0 {
-                        bail!("couldn't post the chat in thread {}: {e:#}", p.thread);
+                        bail!("couldn't post the chat in Pointman channel {}: {e:#}", p.channel);
                     }
                 }
             }
@@ -708,9 +708,11 @@ fn chat_remove(x: &Ext, _: &Job, p: ChatRemoveParams) -> anyhow::Result<ChatRemo
     })?;
     x.api(&p.account, |api| chat::remove(api, &m.id))?;
     let line = chat::removed_line(&m, reason);
-    let (logged, note) = match x.post(&p.thread, line, vec![]) {
+    let (logged, note) = match x.post(&p.channel, line, vec![]) {
         Ok(post) => (post, String::new()),
-        Err(e) => (String::new(), format!(" It wasn't logged in thread {} ({e:#}): log it by hand.", p.thread)),
+        Err(e) => {
+            (String::new(), format!(" It wasn't logged in Pointman channel {} ({e:#}): log it by hand.", p.channel))
+        }
     };
     Ok(ChatRemoveResult {
         text: format!(

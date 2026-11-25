@@ -35,7 +35,7 @@ searched name in a title's first ~45 characters, chapters from the final cut (no
 every number and link checked against its source, and one paste-ready `publish/description.md`.
 
 **On the channel:** the `youtube` commands, on the machine with the channel signed in: `create_job`
-(or `/youtube <verb>` in a thread). `video` is the 11-character id; `file` is a board file
+(or `/youtube <verb>` in a Pointman channel). `video` is the 11-character id; `file` is a board file
 (`pointman://asset/<id>`) or a path on that machine.
 
 | For | Command |

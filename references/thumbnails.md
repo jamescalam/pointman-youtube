@@ -110,9 +110,9 @@ Sources:
 ## 7. Deliver on the board
 
 - Post 2–3 concepts that are genuinely different, not three tweaks of one. Use
-  `share_file(path, thread_id=...)` for each, plus the feed check. Pair each with its title
+  `share_file(path, channel=..., in_thread=...)` for each, plus the feed check. Pair each with its title
   (A + 1, B + 2).
-- Ask the owner to choose: `create_post(thread=…, blocks=["…", {"ask": {"choice": {"options": [...], "pick": n}}}])`
+- Ask the owner to choose: `create_post(channel=…, blocks=["…", {"ask": {"choice": {"options": [...], "pick": n}}}])`
   (`pick` counts from 1), with one line on why you'd pick that one.
 - **Revisions:** render to the same path and share again, so it's a new version of the same card.
   Notes pinned on a card (`get_file(file=<id>)`) are the change list: answer each. For a redesign rather
