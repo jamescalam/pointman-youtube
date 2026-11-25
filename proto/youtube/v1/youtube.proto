@@ -300,12 +300,12 @@ message ChatMessage {
   string kind = 8;
 }
 
-// youtube.chat_watch: a live video's new chat messages posted to a thread in batches, until it's cancelled, the chat ends or minutes have gone by.
+// youtube.chat_watch: a live video's new chat messages posted to a Pointman channel in batches, until it's cancelled, the chat ends or minutes have gone by.
 message ChatWatchParams {
   // The live video's id: the 11 characters after watch?v= or youtu.be/.
   string video = 1 [(buf.validate.field).required = true, (buf.validate.field).string.pattern = "^[A-Za-z0-9_-]{11}$"];
-  // The thread each batch is posted in (thr_123).
-  string thread = 2 [(buf.validate.field).required = true, (buf.validate.field).string.pattern = "^(thr_)?[1-9][0-9]*$"];
+  // The Pointman channel each batch is posted in (ch_123).
+  string channel = 2 [(buf.validate.field).required = true, (buf.validate.field).string.pattern = "^(ch_)?[1-9][0-9]*$"];
   // How often it posts the messages since the last batch, in seconds (default 15; never sooner than YouTube asks).
   int32 every_seconds = 3 [(buf.validate.field).int32 = {gte: 5, lte: 300}, (pointman.v1.setting).default = "15"];
   // Who a batch @mentions (an agent's handle), so it wakes for each one. Empty: nobody.
@@ -348,7 +348,7 @@ message ChatSendResult {
   string chat_id = 3;
 }
 
-// youtube.chat_remove: delete a message from a live chat the channel owns or moderates, and log it in a thread.
+// youtube.chat_remove: delete a message from a live chat the channel owns or moderates, and log it in a Pointman channel.
 message ChatRemoveParams {
   // The live video's id, whose chat has the message. Or give chat_id.
   string video = 1 [(buf.validate.field).string.pattern = "^([A-Za-z0-9_-]{11})?$"];
@@ -358,8 +358,8 @@ message ChatRemoveParams {
   string message_id = 3 [(buf.validate.field).required = true, (buf.validate.field).string = {min_len: 1, max_len: 200, pattern: "^\\S+$"}];
   // Why it's removed, for the log (spam, a scam link…).
   string reason = 4 [(buf.validate.field).required = true, (buf.validate.field).string = {min_len: 1, max_len: 200}];
-  // The thread where the deletion is logged (thr_123): one line with the author, their words, the time and the reason.
-  string thread = 5 [(buf.validate.field).required = true, (buf.validate.field).string.pattern = "^(thr_)?[1-9][0-9]*$"];
+  // The Pointman channel where the deletion is logged (ch_123): one line with the author, their words, the time and the reason.
+  string channel = 5 [(buf.validate.field).required = true, (buf.validate.field).string.pattern = "^(ch_)?[1-9][0-9]*$"];
   // True once removing it was agreed (the owner's yes, or the event's spam rule). Without it, nothing is removed.
   bool confirm = 6;
 
@@ -372,7 +372,7 @@ message ChatRemoveResult {
   string message_id = 2;
   // The message that was removed, as it was.
   ChatMessage message = 3;
-  // The log's post in the thread (post_123); empty if it couldn't be posted (text says why).
+  // The log's post (post_123); empty if it couldn't be posted (text says why).
   string logged = 4;
 }
 
