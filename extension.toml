@@ -9,10 +9,10 @@
 [extension]
 id = "youtube"
 name = "YouTube"
-version = "0.6.0"
+version = "0.7.0"
 publisher = "jamescalam"
 summary = "Upload videos and edit their titles, descriptions, tags and thumbnails on a YouTube channel, with research and packaging the channel's owner picks."
-node = ">=0.5.0,<1"
+node = ">=0.6,<1"
 platforms = ["macos-arm64", "macos-x86_64", "linux-x86_64", "linux-arm64"]
 
 [run]
@@ -21,7 +21,7 @@ runtime = "binary"
 
 [behavior]
 skill = "SKILL.md"
-clients = ["claude", "codex", "gemini"]
+harnesses = ["claude", "codex", "gemini"]
 files = ["references", "scripts"]
 
 [permissions]
